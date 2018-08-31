@@ -102,6 +102,14 @@ class ManagerTest extends Test
         $this->assertSame($this->manager->isEnabled($id), $config['enabled']);
     }
 
+
+    public function testGetCategoriesArray()
+    {
+        $this->assertCount(1, $this->manager->getCategoriesArray());
+        $this->assertCount(1, $this->manager->getCategoriesArray(['enabled' => true], true));
+        $this->assertCount(0, $this->manager->getCategoriesArray(['enabled' => false]));
+    }
+
     public function testUninstall()
     {
         $this->manager->uninstall(self::test_module_id, $e);

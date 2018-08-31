@@ -148,6 +148,11 @@ class Manager extends Component implements BootstrapInterface
     {
         $key = key($filter);
         $val = reset($filter);
+
+        if (empty($filter)) {
+            return $this->getModulesClassesList();
+        }
+
         return array_filter($this->getModulesClassesList(), function ($a) use ($key, $val) {
             return $a->$key == $val;
         });
@@ -394,7 +399,7 @@ class Manager extends Component implements BootstrapInterface
                 return $this->upgrade($id, $file);
             }
 
-            rename(dirname($file), \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR .  $id));
+            rename(dirname($file), \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR . $id));
 
             $this->clearCache()->addAppModulesToApplication(['id' => $id]);
 
@@ -456,5 +461,31 @@ class Manager extends Component implements BootstrapInterface
 
     }
 
+    /**
+     * @param array $filter
+     * @param bool $flushCache
+     * @return array
+     */
+    public function getCategoriesArray($filter = [], $flushCache = false)
+    {
+        if ($flushCache) {
+            $this->clearCache();
+        }
+        $models = $this->getFilteredClassesList($filter);
+
+        if (empty($models)) {
+            return [];
+        }
+
+        $categories = array_map(function ($d) {
+            return [
+                'count' => count($d),
+                'modules' => $d,
+                'caption' => $d[0]->category
+            ];
+        }, ArrayHelper::index($models, null, 'category'));
+
+        return array_values($categories);
+    }
 
 }
