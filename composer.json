@@ -1,6 +1,6 @@
 {
   "name": "somov/yii2-app-module",
-  "description": "Yii2 application module",
+  "description": "Yii2 install and uninstall modules ",
   "type": "yii2-extension",
   "keywords": [
     "yii2",
@@ -21,5 +21,13 @@
     "psr-4": {
       "somov\\appmodule\\": "src"
     }
+  },
+  "archive": {
+    "exclude": [
+      "/.*",
+      "/tests",
+      "/vendor",
+      "/bin"
+    ]
   }
 }

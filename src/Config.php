@@ -33,7 +33,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /** процедура обработки события = eventByMethod | eventToEventObject
      * @var string
      */
-    public $eventMethod = self::METHOD_TYPE_EVENT_BY_METHOD;
+    public $eventMethod = self::METHOD_TYPE_EVENT_TO_EVENT;
 
     private const RUNTIME_FIELDS = [
         'id',
@@ -63,7 +63,9 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 
     public $version;
 
-    public $category;
+    public $category = 'Not set';
+
+    public $author;
 
     public $events = [];
 
