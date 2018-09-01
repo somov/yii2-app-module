@@ -26,6 +26,7 @@ interface AppModuleInterface
      */
     public function uninstall();
 
+
     /**
      * Get a event handler object
      * @return EventHandlerInterface

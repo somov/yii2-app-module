@@ -29,9 +29,7 @@ class Module extends \yii\base\Module implements AppModuleInterface, EventHandle
      */
     public static function configure(Config $config)
     {
-        $config->id = 'test-module';
         $config->name = 'Test';
-
         $config->description = 'Test';
         $config->version = '1.0.1';
         $config->events = self::getEvents();

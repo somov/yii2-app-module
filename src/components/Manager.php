@@ -16,9 +16,12 @@ use yii\base\BootstrapInterface;
 use yii\base\Component;
 use yii\base\Event;
 use yii\base\Exception;
+use yii\base\Module;
+use yii\base\Security;
 use yii\caching\Cache;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
+use yii\helpers\StringHelper;
 use yii\web\Application;
 
 
@@ -32,12 +35,9 @@ class Manager extends Component implements BootstrapInterface
 {
     use ContainerCompositions;
 
-    const LOC_FILE = 'enabled.loc';
-
     public $modulesAlias = '@app/modules';
 
     public $baseNameSpace = 'app\modules';
-
 
     public $processAjax = false;
 
@@ -81,63 +81,87 @@ class Manager extends Component implements BootstrapInterface
         return __CLASS__ . 'modulesList';
     }
 
+    /**
+     * @param string $file file name of module class
+     * @param bool $reloadClass
+     * @return null|Config
+     */
+    private function initConfig($file, $reloadClass = false)
+    {
+
+        if (!file_exists($file)) {
+            return null;
+        }
+
+        ReflectionHelper::initClassInfo($file, $info);
+
+        $path = dirname($file);
+
+        /**@var AppModuleInterface $class */
+        $class = $info['class'];
+
+        if (class_exists($class) && $reloadClass) {
+            $suffix = ucfirst(strtr((new Security())->generateRandomString(10), ['_' => '', '-' => '']));
+            $content = preg_replace('/class\s*(Module)\s*extends/',
+                'class Module' . $suffix . ' extends', file_get_contents($file));
+            $reloadFile = $path . DIRECTORY_SEPARATOR . 'Module' . $suffix . '.php';
+            file_put_contents($reloadFile, $content);
+            $config = $this->initConfig($reloadFile);
+            unlink($reloadFile);
+            return $config;
+        }
+
+        \Yii::setAlias($info['namespace'], $path);
+        \Yii::$classMap[(string)$class] = $file;
+
+        if (in_array(AppModuleInterface::class, class_implements($class))) {
+
+            $config = new Config([
+                'alias' => $this->modulesAlias,
+                'runtime' => [
+                    'namespace' => $info['namespace'],
+                    'class' => $class,
+                    'path' => $path
+                ]
+            ]);
+
+            $class::configure($config);
+            $config->isEnabled();
+            return $config;
+        };
+
+        return null;
+    }
 
     /** Массив конфигураций модулей = ['id' => '', 'path' => '', 'enabled', 'class']
      * если нет в кеше - обходит каталог из альяса @modulesAlias
      * @return Config[]
      */
-
     public function getModulesClassesList()
     {
-        $alias = $this->modulesAlias;
+        $path = \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR);
 
-        $configs = $this->getCache()->getOrSet($this->getCacheKey(), function () use ($alias) {
+        $configs = $this->getCache()->getOrSet($this->getCacheKey(), function () use ($path) {
             $r = [];
-            foreach (FileHelper::findFiles(\Yii::getAlias($this->modulesAlias), [
-                'only' => ['pattern' => '*/Module.php']
+            foreach (FileHelper::findFiles($path, [
+                'only' => ['pattern' => '*Module.php']
             ]) as $file) {
-                ReflectionHelper::initClassInfo($file, $info);
-                $id = basename(dirname($file));
-                $path = dirname($file);
-
-                if ($info['namespace'] !== ($this->baseNameSpace . '\\' . $id)) {
-                    \Yii::setAlias($info['namespace'], $path);
+                if ($config = $this->initConfig($file)) {
+                    if (isset($config->parentModule) && isset($r[$config->parentModule])) {
+                        /** @var Config $parent */
+                        $parent = $r[$config->parentModule];
+                        $parent->modules[] = [
+                            'class' => $config->class,
+                            'version' => $config->version,
+                        ];
+                    }
+                    $r[$config->id] = $config;
                 }
-
-                /**@var AppModuleInterface $class */
-                $class = $info['class'];
-
-                if (in_array(AppModuleInterface::class, class_implements($class))) {
-
-                    $config = new Config([
-                        'runtime' => [
-                            'namespace' => $info['namespace'],
-                            'class' => $class,
-                            'id' => $id,
-                            'path' => $path,
-                            'enabled' => $this->isEnabled($id),
-                        ]
-                    ]);
-
-                    $class::configure($config);
-
-                    $r[] = $config;
-                };
             }
             return $r;
         });
 
         return $configs;
-    }
-
-
-    /**
-     * @param $id
-     * @return AppModuleInterface|string $class
-     */
-    protected function getModuleClass($id)
-    {
-        return $this->baseNameSpace . '\\' . $id . '\\Module';
     }
 
     /**
@@ -152,14 +176,26 @@ class Manager extends Component implements BootstrapInterface
 
         return array_filter($this->getModulesClassesList(), function ($a) use ($filter) {
             foreach ($filter as $attribute => $value) {
-                if ($a->$attribute != $value) {
-                    return false;
+                if (is_scalar($value)) {
+                    if ($a->$attribute != $value) {
+                        return false;
+                    }
+                } else {
+                    foreach ($value as $item) {
+                        if (!in_array($item, $a->$attribute)) {
+                            return false;
+                        };
+                    }
                 }
             }
             return true;
         });
     }
 
+    /**
+     * @param string $id
+     * @return mixed|null|Config
+     */
     public function getModuleConfigById($id)
     {
         if ($list = $this->getFilteredClassesList(['id' => $id])) {
@@ -168,51 +204,44 @@ class Manager extends Component implements BootstrapInterface
         return null;
     }
 
+    /**
+     * @param Config $config
+     */
+    protected function addModule(Config $config)
+    {
+
+        \Yii::$app->setModule($config->id, [
+            'class' => $config->class,
+            'version' => $config->version,
+            'modules' => $config->modules
+        ]);
+
+        if ($config->nameSpace !== ($this->baseNameSpace . '\\' . $config->id)) {
+            \Yii::setAlias($config->nameSpace, $config->path);
+        }
+
+        if (!empty($config->urlRules)) {
+            \Yii::$app->urlManager->addRules($config->urlRules, $config->appendRoutes);
+        }
+
+        if ($config->bootstrap) {
+            $module = \Yii::$app->getModule($config->id);
+            if ($module instanceof BootstrapInterface) {
+                $module->bootstrap(\Yii::$app);
+            }
+        }
+    }
 
     /** Добавляет классы модулей в конфигурацию приложения
      * @param array $filter
      */
     private function addAppModulesToApplication($filter = ['enabled' => true])
     {
-
-        foreach (ArrayHelper::index($this->getFilteredClassesList($filter), 'id')
-                 as $id => $config) {
+        foreach ($this->getFilteredClassesList($filter) as $config) {
             /**@var  Config $config */
-            \Yii::$app->setModule($id, [
-                'class' => $config->class
-            ]);
-
-            if ($config->nameSpace !== ($this->baseNameSpace . '\\' . $id)) {
-                \Yii::setAlias($config->nameSpace, $config->path);
-            }
-
-            if (!empty($config->urlRules)) {
-                \Yii::$app->urlManager->addRules($config->urlRules, $config->appendRoutes);
-            }
-
-            if ($config->bootstrap) {
-                $module = \Yii::$app->getModule($id);
-                if ($module instanceof BootstrapInterface) {
-                    $module->bootstrap(\Yii::$app);
-                }
-            }
+            $this->addModule($config);
         }
     }
-
-    /** Фабрика объектов активных или не активных модулей
-     * @return array
-     */
-    public function getModulesInstances()
-    {
-        $modules = [];
-        foreach ($this->getModulesClassesList() as $list) {
-            if ($module = \Yii::$app->getModule($list['id'])) {
-                $modules[] = $module;
-            }
-        }
-        return $modules;
-    }
-
 
     /** Регистрация событий*/
     private function registerEvents()
@@ -248,8 +277,7 @@ class Manager extends Component implements BootstrapInterface
      */
     public function _eventByMethod($event)
     {
-        $module = \Yii::$app->getModule($event->data['moduleConfig']['id']);
-
+        $module = \Yii::$app->getModule($event->data['moduleConfig']->id);
         $method = self::generateMethodName($event);
 
         if (method_exists($module, $method)) {
@@ -274,66 +302,6 @@ class Manager extends Component implements BootstrapInterface
         }
     }
 
-    /**
-     * @param $id
-     * @return bool
-     */
-    public function isEnabled($id)
-    {
-        return file_exists($this->getLocFile($id));
-    }
-
-    /**
-     * @param $id
-     * @return $this
-     */
-    protected function turnOn($id)
-    {
-        if ($this->isEnabled($id)) {
-            return $this;
-        }
-        file_put_contents($this->getLocFile($id), '');
-        $this->clearCache();
-        return $this;
-    }
-
-    /**
-     * @param $id
-     * @return $this
-     */
-    protected function turnOff($id)
-    {
-        if (!$this->isEnabled($id)) {
-            return $this;
-        }
-        unlink($this->getLocFile($id));
-        $this->clearCache();
-        return $this;
-    }
-
-    /**
-     * @param $id
-     * @return $this
-     */
-    public function toggle($id)
-    {
-        if ($this->isEnabled($id)) {
-            $this->turnOff($id);
-        } else {
-            $this->turnOn($id);
-        }
-        return $this;
-    }
-
-    /**
-     * @param $id
-     * @return bool|string
-     */
-    private function getLocFile($id)
-    {
-        return \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR .
-            $id . DIRECTORY_SEPARATOR . self::LOC_FILE);
-    }
 
     public function clearCache()
     {
@@ -376,43 +344,67 @@ class Manager extends Component implements BootstrapInterface
         return \Yii::$app->getModule($id);
     }
 
-    public function upgrade($id, $file)
+    /**
+     * @param Config $exist
+     * @param Config $new
+     * @return bool
+     */
+    protected function upgrade(Config $exist, Config $new)
     {
-        //TODO upgrade
+        if (version_compare($exist->version, $new->version, '>=')) {
+            return true;
+        }
+        /** @var Module $instance */
+        $instance = \Yii::createObject($new->class, ['id' => $new->id, \Yii::$app]);
+        $instance->version = $new->version;
+        if ($instance->hasMethod('upgrade') && !$instance->upgrade()) {
+            return false;
+        }
+        FileHelper::removeDirectory($exist->path);
+        rename($new->path, $exist->path);
+        $this->clearCache();
         return true;
+    }
+
+    protected function installFiles($filesPath, Config $config)
+    {
+        $path = $config->getInstalledPath();
+        FileHelper::createDirectory($path);
+        rename($filesPath, $path);
     }
 
     public function install($fileName, &$error)
     {
-
         try {
             $tmp = $this->getTmpPath($fileName);
             $zip = new \ZipArchive();
             $zip->open($fileName);
             $zip->extractTo($tmp);
 
-            $id = basename(glob($tmp . '/*', GLOB_ONLYDIR)[0]);
-            $file = $tmp . DIRECTORY_SEPARATOR . $id . DIRECTORY_SEPARATOR . 'Module.php';
-            $class = $this->getModuleClass($id);
+            $file = $tmp . DIRECTORY_SEPARATOR . 'Module.php';
 
-            if (!class_exists($class)) {
-                include $file;
-            } else {
-                return $this->upgrade($id, $file);
+            if (!$config = $this->initConfig($file, true)) {
+                throw new \RuntimeException('Error init module config');
+            };
+
+            if ($c = $this->getModuleConfigById($config->id)) {
+                if ($this->upgrade($c, $config)) {
+                    return true;
+                }
             }
 
-            rename(dirname($file), \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR . $id));
+            $this->installFiles(dirname($file), $config);
+            $this->clearCache();
+            $config = $this->getModuleConfigById($config->id);
 
-            $this->clearCache()->addAppModulesToApplication(['id' => $id]);
+            $this->addModule($config);
 
             /** @var AppModuleInterface $module */
-            $module = \Yii::$app->getModule($id);
+            $module = \Yii::$app->getModule($config->id);
 
             if ($module->install()) {
-                $this->turnOn($id);
+                $config->turnOn();
             }
-
-            $this->clearCache();
 
         } catch (\Exception $exception) {
             $error = $exception->getMessage();
@@ -440,7 +432,7 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $id
-     * @param $config
+     * @param Config $config
      * @param $error
      * @return bool
      */
@@ -451,9 +443,8 @@ class Manager extends Component implements BootstrapInterface
             if ($module->uninstall()) {
                 $module->install();
             }
-            $config = $this->turnOn($id)
-                ->clearCache()
-                ->getModuleConfigById($id);
+            $config->turnOn();
+            $this->clearCache();
         } catch (\Exception $exception) {
             $error = $exception->getMessage();
             return false;

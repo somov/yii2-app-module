@@ -16,10 +16,10 @@ use yii\helpers\Inflector;
  *
  *
  * @property string class
- * @property string id
  * @property string nameSpace
  * @property string path
  * @property boolean enabled
+ * @property array implements
  *
  * Class ModuleConfig
  * @package app\components
@@ -28,7 +28,10 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 {
 
     const METHOD_TYPE_EVENT_BY_METHOD = '_eventByMethod';
+
     const METHOD_TYPE_EVENT_TO_EVENT = '_eventToEventObject';
+
+    const LOC_FILE = 'enabled.loc';
 
     /** процедура обработки события = eventByMethod | eventToEventObject
      * @var string
@@ -36,7 +39,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     public $eventMethod = self::METHOD_TYPE_EVENT_TO_EVENT;
 
     private const RUNTIME_FIELDS = [
-        'id',
+        'alias',
         'path',
         'namespace',
         'class',
@@ -75,8 +78,12 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 
     public $bootstrap = false;
 
+    public $parentModule;
 
-    private $id;
+    /** @var  Config[] */
+    public $modules = [];
+
+    public $id;
 
     private $path;
 
@@ -89,19 +96,22 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /** @var  boolean */
     private $enabled;
 
+    /**
+     * @var  string
+     */
+    protected $alias;
 
 
     public function __construct(array $config = [])
     {
         $runtime = ArrayHelper::remove($config, 'runtime');
+        $this->alias = ArrayHelper::remove($config, 'alias');
 
         parent::__construct($config);
 
         foreach ($runtime as $key => $value) {
             $this->$key = $value;
         }
-
-
     }
 
     public function serialize()
@@ -123,16 +133,9 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /**
      * @return mixed
      */
-    public function getId()
-    {
-        return $this->id;
-    }
-
-    /**
-     * @return mixed
-     */
     public function getPath()
     {
+
         return $this->path;
     }
 
@@ -215,4 +218,84 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 
         return $instance;
     }
+
+    public function getImplements()
+    {
+        return class_implements($this->class);
+    }
+
+    public function getInstalledPath()
+    {
+        $aliases = [
+            $this->alias
+        ];
+
+        if (isset($this->parentModule)) {
+            $aliases[] = $this->parentModule;
+            $aliases[] = 'modules';
+        }
+
+        $aliases[] = $this->id;
+
+        return \Yii::getAlias(implode(DIRECTORY_SEPARATOR, $aliases));
+    }
+
+
+    public function isEnabled()
+    {
+        $this->enabled = file_exists($this->getLocFile());
+        return $this->enabled;
+    }
+
+    /**
+     * @return $this
+     */
+    public function turnOn()
+    {
+        if ($this->isEnabled()) {
+            return $this;
+        }
+        if (file_put_contents($this->getLocFile(), '') !== false) {
+            $this->enabled = true;
+        };
+
+        return $this;
+    }
+
+    /**
+     * @return $this
+     */
+    public function turnOff()
+    {
+        if (!$this->isEnabled()) {
+            return $this;
+        }
+
+        unlink($this->getLocFile());
+        $this->isEnabled();
+
+        return $this;
+    }
+
+    /**
+     * @return $this
+     */
+    public function toggle()
+    {
+        if ($this->isEnabled()) {
+            $this->turnOff();
+        } else {
+            $this->turnOn();
+        }
+        return $this;
+    }
+
+    /**
+     * @return bool
+     */
+    private function getLocFile()
+    {
+        return $this->getInstalledPath() . DIRECTORY_SEPARATOR . self::LOC_FILE;
+    }
+
 }
