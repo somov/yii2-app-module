@@ -146,15 +146,17 @@ class Manager extends Component implements BootstrapInterface
      */
     public function getFilteredClassesList($filter = ['enabled' => true])
     {
-        $key = key($filter);
-        $val = reset($filter);
-
         if (empty($filter)) {
             return $this->getModulesClassesList();
         }
 
-        return array_filter($this->getModulesClassesList(), function ($a) use ($key, $val) {
-            return $a->$key == $val;
+        return array_filter($this->getModulesClassesList(), function ($a) use ($filter) {
+            foreach ($filter as $attribute => $value) {
+                if ($a->$attribute != $value) {
+                    return false;
+                }
+            }
+            return true;
         });
     }
 
