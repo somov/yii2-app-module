@@ -477,7 +477,7 @@ class Manager extends Component implements BootstrapInterface
             return [];
         }
 
-        $categories = array_map(function ($d) {
+        return array_map(function ($d) {
             return [
                 'count' => count($d),
                 'modules' => $d,
@@ -485,7 +485,6 @@ class Manager extends Component implements BootstrapInterface
             ];
         }, ArrayHelper::index($models, null, 'category'));
 
-        return array_values($categories);
     }
 
 }
