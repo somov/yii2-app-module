@@ -14,7 +14,6 @@ use yii\base\Exception;
 class Module extends \yii\base\Module implements AppModuleInterface, EventHandlerInterface
 {
 
-
     public function viewBeginPage($event)
     {
         /** @var \yii\web\View $view */

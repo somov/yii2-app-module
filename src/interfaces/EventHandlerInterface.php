@@ -20,4 +20,5 @@ interface EventHandlerInterface
      * @return void
      */
     public function handleModuleEvent($event, $module);
+
 }

@@ -35,7 +35,9 @@ class Manager extends Component implements BootstrapInterface
 {
     use ContainerCompositions;
 
-    public $modulesAlias = '@app/modules';
+    public $places = [
+        'modules' => '@app/modules'
+    ];
 
     public $baseNameSpace = 'app\modules';
 
@@ -117,7 +119,6 @@ class Manager extends Component implements BootstrapInterface
         if (in_array(AppModuleInterface::class, class_implements($class))) {
 
             $config = new Config([
-                'alias' => $this->modulesAlias,
                 'runtime' => [
                     'namespace' => $info['namespace'],
                     'class' => $class,
@@ -139,30 +140,34 @@ class Manager extends Component implements BootstrapInterface
      */
     public function getModulesClassesList()
     {
-        $path = \Yii::getAlias($this->modulesAlias . DIRECTORY_SEPARATOR);
 
-        $configs = $this->getCache()->getOrSet($this->getCacheKey(), function () use ($path) {
+        $places = $this->places;
+
+        return $this->getCache()->getOrSet($this->getCacheKey(), function () use ($places) {
             $r = [];
-            foreach (FileHelper::findFiles($path, [
-                'only' => ['pattern' => '*Module.php']
-            ]) as $file) {
-                if ($config = $this->initConfig($file)) {
-                    if (isset($config->parentModule) && isset($r[$config->parentModule])) {
-                        /** @var Config $parent */
-                        $parent = $r[$config->parentModule];
-                        $parent->modules[] = [
-                            'class' => $config->class,
-                            'version' => $config->version,
-                        ];
+            foreach ($places as $place => $alias) {
+                foreach (FileHelper::findFiles(\Yii::getAlias($alias), [
+                    'only' => ['pattern' => '*Module.php']
+                ]) as $file) {
+                    if ($config = $this->initConfig($file)) {
+                        if (isset($config->parentModule) && isset($r[$config->parentModule])) {
+                            /** @var Config $parent */
+                            $parent = $r[$config->parentModule];
+                            $parent->addModules([
+                                $config->id => [
+                                    'class' => $config->class,
+                                    'version' => $config->version
+                                ]
+                            ]);
+                        }
+                        $r[$config->id] = $config;
                     }
-                    $r[$config->id] = $config;
                 }
             }
             return $r;
         });
-
-        return $configs;
     }
+
 
     /**
      * @param array $filter
@@ -394,7 +399,9 @@ class Manager extends Component implements BootstrapInterface
             }
 
             $this->installFiles(dirname($file), $config);
+
             $this->clearCache();
+
             $config = $this->getModuleConfigById($config->id);
 
             $this->addModule($config);

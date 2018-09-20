@@ -47,7 +47,7 @@ class ManagerTest extends Test
         }
     }
 
-    public function testInstallAppNm()
+    public function InstallAppNm()
     {
         $this->cleare();
         $zip = $this->createZipTestModule('', 'namespaceapp');
@@ -70,6 +70,11 @@ class ManagerTest extends Test
 
         $module = \testModule\Module::getInstance();
         $config = $this->manager->getModuleConfigById($module->id);
+
+        $config->type = 'eee';
+        $test = $config['type'];
+        $this->assertSame('eee', $test);
+        
 
         $app = \Yii::$app;
         $app->state = Application::STATE_HANDLING_REQUEST;
