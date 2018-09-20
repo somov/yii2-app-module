@@ -14,6 +14,8 @@ use PHPUnit\Framework\Error\Error;
 use somov\appmodule\components\Manager;
 use testModule\components\TestInterface;
 use yii\base\Application;
+use yii\caching\ExpressionDependency;
+use yii\caching\FileCache;
 use yii\helpers\FileHelper;
 use ZipArchive;
 
@@ -74,7 +76,8 @@ class ManagerTest extends Test
         $config->type = 'eee';
         $test = $config['type'];
         $this->assertSame('eee', $test);
-        
+        $description = $config->description;
+
 
         $app = \Yii::$app;
         $app->state = Application::STATE_HANDLING_REQUEST;
@@ -164,8 +167,17 @@ class ManagerTest extends Test
 
     protected function setUp()
     {
-        $this->manager = \Yii::createObject(
-            Manager::class
+        $this->manager = \Yii::createObject([
+                'class' => Manager::class,
+                'cacheConfig' => [
+                    'class' => FileCache::class,
+                ],
+                'cacheDependencyConfig' => [
+                    'class' => ExpressionDependency::class,
+                    'params' => ['lang'=>\Yii::$app->language],
+                    'expression' =>  '$this->params["lang"] === \Yii::$app->language'
+                ]
+            ]
         );
         $this->manager->clearCache();
 

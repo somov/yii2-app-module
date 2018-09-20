@@ -67,6 +67,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
             'bootstrap',
             'parentModule',
             'modules',
+            'version'
         ];
     }
 

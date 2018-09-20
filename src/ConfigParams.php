@@ -32,7 +32,10 @@ trait ConfigParams
 {
     private $_cp = [];
 
-
+    /**
+     * @param $attribute
+     * @return int
+     */
     private function getAid($attribute)
     {
         return (integer)array_search($attribute, $this->attributesNames());
@@ -170,7 +173,7 @@ trait ConfigParams
      */
     public function getSettingsRoute()
     {
-        return $this->getter('settingsRoute');
+        return $this->getter('settingsRoute', null);
     }
 
     /**
@@ -242,7 +245,7 @@ trait ConfigParams
      */
     public function setVersion($version)
     {
-        $this->setter('description', $version);
+        $this->setter('version', $version);
     }
 
     /**
