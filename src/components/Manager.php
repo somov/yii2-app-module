@@ -142,7 +142,8 @@ class Manager extends Component implements BootstrapInterface
             return $config;
         }
 
-        \Yii::setAlias($info['namespace'], $path);
+        $alias = str_replace('\\', '/', $info['namespace']);
+        \Yii::setAlias($alias, $path);
         \Yii::$classMap[(string)$class] = $file;
 
         if (in_array(AppModuleInterface::class, class_implements($class))) {
@@ -154,9 +155,11 @@ class Manager extends Component implements BootstrapInterface
                     'path' => $path
                 ]
             ]);
-
             $class::configure($config);
             $config->isEnabled();
+
+            \Yii::setAlias($alias, null);
+
             return $config;
         };
 

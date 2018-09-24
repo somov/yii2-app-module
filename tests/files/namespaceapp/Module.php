@@ -31,10 +31,12 @@ class Module extends \yii\base\Module implements AppModuleInterface, EventHandle
         $config->description = 'Test';
         $config->version = '1.0.1';
         $config->category = 'Test';
+        $test = ModuleComponent::getFoo();
     }
 
     public function install()
     {
+
         return true;
     }
 
