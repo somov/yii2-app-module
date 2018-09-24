@@ -49,11 +49,15 @@ class Manager extends Component implements BootstrapInterface
     public $cacheConfig = [
         'class' => 'yii\caching\FileCache',
         'keyPrefix' => 'modules',
-        'dependency' => null,
     ];
 
     /** @var array|null */
     public $cacheDependencyConfig = null;
+
+    /**
+     * @var array|callable
+     */
+    public $cacheVariations = [];
 
     /**
      * Bootstrap method to be called during application bootstrap stage.
@@ -84,7 +88,10 @@ class Manager extends Component implements BootstrapInterface
 
     private function getCacheKey()
     {
-        return __CLASS__ . 'modulesList';
+        if (is_callable($this->cacheVariations)) {
+            $this->cacheVariations = call_user_func($this->cacheVariations);
+        }
+        return array_merge([__CLASS__], (array)$this->cacheVariations);
     }
 
     /**
@@ -92,10 +99,10 @@ class Manager extends Component implements BootstrapInterface
      */
     private function getCacheDependency()
     {
-        if (empty($this->cacheDependencyConfig)) {
-            return null;
+        if (is_array($this->cacheDependencyConfig)) {
+            return \Yii::createObject($this->cacheDependencyConfig);
         }
-        return \Yii::createObject($this->cacheDependencyConfig);
+        return null;
     }
 
     /**
