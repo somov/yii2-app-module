@@ -35,6 +35,13 @@ class Manager extends Component implements BootstrapInterface
 {
     use ContainerCompositions;
 
+    CONST ACTION_BEFORE_MODULE_INSTALL = 'beforeModuleInstall';
+    CONST ACTION_AFTER_MODULE_INSTALL = 'afterModuleInstall';
+
+    CONST ACTION_BEFORE_MODULE_UNINSTALL = 'beforeModuleUnInstall';
+    CONST ACTION_AFTER_MODULE_UNINSTALL = 'afterModuleUnInstall';
+
+
     public $places = [
         'modules' => '@app/modules'
     ];
@@ -428,10 +435,10 @@ class Manager extends Component implements BootstrapInterface
 
             $this->addModule($config);
 
-            /** @var AppModuleInterface $module */
+            /** @var AppModuleInterface|Module $module */
             $module = \Yii::$app->getModule($config->id);
 
-            if ($module->install()) {
+            if ($this->internalInstall($module)) {
                 $config->turnOn();
             }
 
@@ -447,7 +454,7 @@ class Manager extends Component implements BootstrapInterface
     {
         try {
             $module = $this->loadModule($id, $config);
-            if ($module->uninstall()) {
+            if ($this->internalUnInstall($module)) {
                 FileHelper::removeDirectory($config['path']);
             }
             $this->clearCache();
@@ -460,6 +467,37 @@ class Manager extends Component implements BootstrapInterface
     }
 
     /**
+     * @param $module \yii\base\Module|AppModuleInterface
+     * @return bool
+     */
+    private function internalInstall($module)
+    {
+
+        $module->trigger(self::ACTION_BEFORE_MODULE_INSTALL, new Event());
+
+        if ($module->install()) {
+            $module->trigger(self::ACTION_AFTER_MODULE_INSTALL, new Event());
+            return true;
+        }
+        return false;
+    }
+
+
+    /**
+     * @param $module \yii\base\Module|AppModuleInterface
+     * @return bool
+     */
+    private function internalUnInstall($module)
+    {
+        $module->trigger(self::ACTION_BEFORE_MODULE_UNINSTALL, new Event());
+        if ($module->uninstall()) {
+            $module->trigger(self::ACTION_AFTER_MODULE_UNINSTALL, new Event());
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * @param $id
      * @param Config $config
      * @param $error
@@ -469,8 +507,9 @@ class Manager extends Component implements BootstrapInterface
     {
         try {
             $module = $this->loadModule($id, $config);
-            if ($module->uninstall()) {
-                $module->install();
+
+            if ($this->internalUnInstall($module)) {
+                $this->internalInstall($module);
             }
             $config->turnOn();
             $this->clearCache();
