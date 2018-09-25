@@ -111,11 +111,11 @@ class ManagerTest extends Test
         $config = $this->manager->clearCache()->getModuleConfigById($id);
         $state = $config->enabled;
 
-        $config->toggle();
+        $this->manager->toggle($id, $config);
         $this->assertNotSame($state, $config->enabled);
 
         $state = $config->enabled;
-        $config->toggle();
+        $this->manager->toggle($id, $config);
         $this->assertNotSame($state, $config->enabled);
 
     }

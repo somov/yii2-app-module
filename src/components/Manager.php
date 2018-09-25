@@ -168,7 +168,9 @@ class Manager extends Component implements BootstrapInterface
             $class::configure($config);
             $config->isEnabled();
 
-            \Yii::setAlias($alias, null);
+            if ($reloadClass) {
+                \Yii::setAlias($alias, null);
+            }
 
             return $config;
         };
@@ -316,18 +318,21 @@ class Manager extends Component implements BootstrapInterface
         return lcfirst($name) . ucfirst($event->name);
     }
 
-    /** Передача событий модулю
-     * имя метода должно называется  имя_объекта_событияСобытие
-     * не хочется чтобы клас модуля раздувался обработчиками событий
-     * решил перенести обработку в специальный объект
+    /** Передача события объекту обработчику
      * @param Event $event
+     * @deprecated
      */
     public function _eventByMethod($event)
     {
-        $module = \Yii::$app->getModule($event->data['moduleConfig']->id);
+        /** @var Config $config */
+        $config = $event->data['moduleConfig'];
+        /** @var Module|AppModuleInterface $module */
+        $module = call_user_func([$config->class, 'getInstance']);
+        $handler = $module->getModuleEventHandler();
+
         $method = self::generateMethodName($event);
 
-        if (method_exists($module, $method)) {
+        if (method_exists($handler, $method)) {
             call_user_func_array([$module, $method], ['event' => $event]);
         } else {
             $this->_eventToEventObject($event, $module);
@@ -338,6 +343,7 @@ class Manager extends Component implements BootstrapInterface
      * @param $event
      * @param AppModuleInterface $module
      * @return void
+     * @deprecated
      */
     public function _eventToEventObject($event, AppModuleInterface $module = null)
     {

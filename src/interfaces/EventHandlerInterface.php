@@ -12,12 +12,18 @@ namespace somov\appmodule\interfaces;
 use yii\base\Event;
 use yii\base\Module;
 
+/**
+ * Interface EventHandlerInterface
+ * @package somov\appmodule\interfaces
+ * @deprecated since 1.0.58
+ */
 interface EventHandlerInterface
 {
     /**
      * @param Event $event
      * @param Module $module
      * @return void
+     * @deprecated
      */
     public function handleModuleEvent($event, $module);
 
