@@ -18,10 +18,10 @@ use yii\base\Event;
 use yii\base\Exception;
 use yii\base\Module;
 use yii\base\Security;
+use yii\base\UnknownMethodException;
 use yii\caching\Cache;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
-use yii\helpers\StringHelper;
 use yii\web\Application;
 
 
@@ -35,12 +35,22 @@ class Manager extends Component implements BootstrapInterface
 {
     use ContainerCompositions;
 
-    CONST ACTION_BEFORE_MODULE_INSTALL = 'beforeModuleInstall';
-    CONST ACTION_AFTER_MODULE_INSTALL = 'afterModuleInstall';
+    CONST EVENT_BEFORE_INSTALL = 'beforeInstall';
+    CONST EVENT_AFTER_INSTALL = 'afterInstall';
 
-    CONST ACTION_BEFORE_MODULE_UNINSTALL = 'beforeModuleUnInstall';
-    CONST ACTION_AFTER_MODULE_UNINSTALL = 'afterModuleUnInstall';
+    CONST EVENT_BEFORE_UNINSTALL = 'beforeUnInstall';
+    CONST EVENT_AFTER_UNINSTALL = 'afterUnInstall';
 
+    CONST EVENT_BEFORE_CHANGE_STATE = 'beforeChangeState';
+    CONST EVENT_AFTER_CHANGE_STATE = 'afterChangeState';
+
+    CONST EVENT_BEFORE_UPGRADE = 'beforeUpgrade';
+    CONST EVENT_AFTER_UPGRADE = 'afterUpgrade';
+
+    /** Turn on module after reset oo install
+     * @var bool
+     */
+    public $isAutoActivate = false;
 
     public $places = [
         'modules' => '@app/modules'
@@ -391,15 +401,22 @@ class Manager extends Component implements BootstrapInterface
         if (version_compare($exist->version, $new->version, '>=')) {
             return true;
         }
-        /** @var Module $instance */
+        /** @var Module|AppModuleInterface $instance */
         $instance = \Yii::createObject($new->class, ['id' => $new->id, \Yii::$app]);
-        $instance->version = $new->version;
+
+        $this->trigger(self::EVENT_BEFORE_UPGRADE, new ModuleEvent(['module' => $instance]));
+
         if ($instance->hasMethod('upgrade') && !$instance->upgrade()) {
             return false;
         }
         FileHelper::removeDirectory($exist->path);
         rename($new->path, $exist->path);
+
+        $instance->version = $new->version;
+
         $this->clearCache();
+        $this->trigger(self::EVENT_AFTER_UPGRADE, new ModuleEvent(['module' => $instance]));
+
         return true;
     }
 
@@ -442,7 +459,9 @@ class Manager extends Component implements BootstrapInterface
             $module = \Yii::$app->getModule($config->id);
 
             if ($this->internalInstall($module)) {
-                $config->turnOn();
+                if ($this->isAutoActivate) {
+                    $this->turnOn($config->id, $config);
+                }
             }
 
         } catch (\Exception $exception) {
@@ -470,18 +489,42 @@ class Manager extends Component implements BootstrapInterface
     }
 
     /**
-     * @param $module \yii\base\Module|AppModuleInterface
+     * @param string $method
+     * @param string $eventBefore
+     * @param string $eventAfter
+     * @param Module|AppModuleInterface $module
+     * @param object|null $target
      * @return bool
      */
-    private function internalInstall($module)
+    private function executeMethod($method, $eventBefore, $eventAfter, $module, $target = null)
     {
+        $event = new ModuleEvent(['module' => $module]);
 
-        $module->trigger(self::ACTION_BEFORE_MODULE_INSTALL, new Event());
+        $target = ($target) ? $target : $module;
 
-        if ($module->install()) {
-            $module->trigger(self::ACTION_AFTER_MODULE_INSTALL, new Event());
-            return true;
+        if (isset($eventBefore)) {
+            $this->trigger(self::EVENT_BEFORE_INSTALL, $event);
         }
+
+        if ($event->isValid) {
+
+            try {
+                $result = call_user_func([$target, $method]);
+            } catch (UnknownMethodException $exception) {
+                $r = new \ReflectionMethod($target, $method);
+                $r->setAccessible(true);
+                $result = $r->invoke($target);
+            }
+
+            if ($result) {
+                if (isset($eventAfter)) {
+                    $event->handled = false;
+                    $this->trigger(self::EVENT_AFTER_INSTALL, $event);
+                }
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -490,14 +533,65 @@ class Manager extends Component implements BootstrapInterface
      * @param $module \yii\base\Module|AppModuleInterface
      * @return bool
      */
-    private function internalUnInstall($module)
+    protected function internalUnInstall($module)
     {
-        $module->trigger(self::ACTION_BEFORE_MODULE_UNINSTALL, new Event());
-        if ($module->uninstall()) {
-            $module->trigger(self::ACTION_AFTER_MODULE_UNINSTALL, new Event());
-            return true;
-        }
-        return false;
+        return $this->executeMethod('uninstall', self::EVENT_BEFORE_UNINSTALL,
+            self::EVENT_AFTER_UNINSTALL, $module);
+    }
+
+    /**
+     * @param $module \yii\base\Module|AppModuleInterface
+     * @return bool
+     */
+    protected function internalInstall($module)
+    {
+        return $this->executeMethod('install', self::EVENT_BEFORE_INSTALL,
+            self::EVENT_AFTER_INSTALL, $module);
+    }
+
+    /**
+     * @param $module \yii\base\Module|AppModuleInterface
+     * @param Config $config
+     * @param string $state
+     */
+    protected function internalChangeState($module, $config, $state)
+    {
+        $this->executeMethod($state, self::EVENT_BEFORE_CHANGE_STATE,
+            self::EVENT_AFTER_CHANGE_STATE,
+            $module, $config);
+    }
+
+    /**
+     * @param string $id
+     * @param Config $config
+     */
+    public function turnOn($id, &$config)
+    {
+        $module = $this->loadModule($id, $config);
+        $this->internalChangeState($module, $config, 'turnOn');
+        $this->clearCache();
+    }
+
+    /**
+     * @param string $id
+     * @param Config $config
+     */
+    public function turnOf($id, &$config)
+    {
+        $module = $this->loadModule($id, $config);
+        $this->internalChangeState($module, $config, 'turnOff');
+        $this->clearCache();
+    }
+
+    /**
+     * @param string $id
+     * @param Config $config
+     */
+    public function toggle($id, &$config)
+    {
+        $module = $this->loadModule($id, $config);
+        $this->internalChangeState($module, $config, 'toggle');
+        $this->clearCache();
     }
 
     /**
@@ -514,7 +608,9 @@ class Manager extends Component implements BootstrapInterface
             if ($this->internalUnInstall($module)) {
                 $this->internalInstall($module);
             }
-            $config->turnOn();
+            if ($this->isAutoActivate) {
+                $this->turnOn($id, $config);
+            }
             $this->clearCache();
         } catch (\Exception $exception) {
             $error = $exception->getMessage();

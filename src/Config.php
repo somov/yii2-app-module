@@ -221,7 +221,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /**
      * @return $this
      */
-    public function turnOn()
+    protected function turnOn()
     {
         if ($this->isEnabled()) {
             return $this;
@@ -236,7 +236,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /**
      * @return $this
      */
-    public function turnOff()
+    protected function turnOff()
     {
         if (!$this->isEnabled()) {
             return $this;

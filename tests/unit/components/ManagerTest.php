@@ -56,6 +56,7 @@ class ManagerTest extends Test
         $r = $this->manager->install($zip, $error);
         $this->assertTrue($r, isset($error) ? $error : '');
 
+
     }
 
     /**
@@ -169,6 +170,7 @@ class ManagerTest extends Test
     {
         $this->manager = \Yii::createObject([
                 'class' => Manager::class,
+                'isAutoActivate' => true,
                 'cacheConfig' => [
                     'class' => FileCache::class,
                 ],
