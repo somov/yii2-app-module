@@ -4,9 +4,11 @@
 namespace somov\appmodule;
 
 
+use somov\appmodule\interfaces\AppModuleInterface;
 use yii\base\BaseObject;
 use yii\base\InvalidConfigException;
 use yii\base\Model;
+use yii\base\Module;
 use yii\base\NotSupportedException;
 use yii\helpers\ArrayHelper;
 use yii\helpers\Inflector;
@@ -251,7 +253,7 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /**
      * @return $this
      */
-    public function toggle()
+    protected function toggle()
     {
         if ($this->isEnabled()) {
             $this->turnOff();
@@ -269,5 +271,15 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         return $this->getInstalledPath() . DIRECTORY_SEPARATOR . self::LOC_FILE;
     }
 
+    /** Возвращает уже созданный экземпляр модуля
+     * @return Module|AppModuleInterface|null
+     */
+    public function getModuleInstance()
+    {
+        if (class_exists($this->class, false)) {
+            return call_user_func([$this->class, 'getInstance']);
+        }
+        return null;
+    }
 
 }

@@ -49,7 +49,7 @@ class ManagerTest extends Test
         }
     }
 
-    public function testInstallAppNm()
+    public function testAppNmInstall()
     {
         $this->cleare();
         $zip = $this->createZipTestModule('', 'namespaceapp');
