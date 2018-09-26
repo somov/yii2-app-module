@@ -14,6 +14,9 @@ use yii\base\Module;
 class ModuleEvent extends Event
 {
 
+    /** @var  Manager */
+    public $sender;
+
     /**
      * @var Module
      */

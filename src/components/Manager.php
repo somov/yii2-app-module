@@ -174,7 +174,7 @@ class Manager extends Component implements BootstrapInterface
 
         file_put_contents($reloadFile, $content);
 
-        $config = $this->createConfig($info['namespace'] .'\\'.$class, $info['namespace'], $path);
+        $config = $this->createConfig($info['namespace'] . '\\' . $class, $info['namespace'], $path);
 
         \Yii::setAlias($alias, null);
 
@@ -493,7 +493,13 @@ class Manager extends Component implements BootstrapInterface
         return $this;
     }
 
-    public function install($fileName, &$error)
+    /**
+     * @param $fileName
+     * @param Config $config
+     * @param string $error
+     * @return bool
+     */
+    public function install($fileName, &$config, &$error)
     {
         try {
             $tmp = $this->getTmpPath($fileName);
@@ -521,7 +527,7 @@ class Manager extends Component implements BootstrapInterface
                     $this->turnOn($dstConfig->id, $dstConfig);
                 }
             }
-
+            $config = $dstConfig;
         } catch (\Exception $exception) {
             $error = $exception->getMessage();
             return false;
@@ -530,12 +536,12 @@ class Manager extends Component implements BootstrapInterface
         return true;
     }
 
-    public function uninstall($id, &$error)
+    public function uninstall($id, &$config, &$error)
     {
         try {
             $module = $this->loadModule($id, $config);
             if ($this->internalUnInstall($module)) {
-                FileHelper::removeDirectory($config['path']);
+                FileHelper::removeDirectory($config->path);
             }
             $this->clearCache();
         } catch (\Exception $exception) {
@@ -561,7 +567,7 @@ class Manager extends Component implements BootstrapInterface
         $target = ($target) ? $target : $module;
 
         if (isset($eventBefore)) {
-            $this->trigger(self::EVENT_BEFORE_INSTALL, $event);
+            $this->trigger($eventBefore, $event);
         }
 
         if ($event->isValid) {
@@ -577,7 +583,7 @@ class Manager extends Component implements BootstrapInterface
             if ($result) {
                 if (isset($eventAfter)) {
                     $event->handled = false;
-                    $this->trigger(self::EVENT_AFTER_INSTALL, $event);
+                    $this->trigger($eventAfter, $event);
                 }
                 return true;
             }

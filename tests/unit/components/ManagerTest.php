@@ -53,7 +53,7 @@ class ManagerTest extends Test
     {
         $this->cleare();
         $zip = $this->createZipTestModule('', 'namespaceapp');
-        $r = $this->manager->install($zip, $error);
+        $r = $this->manager->install($zip, $config, $error);
         $this->assertTrue($r, isset($error) ? $error : '');
 
 
@@ -67,7 +67,7 @@ class ManagerTest extends Test
         $this->cleare();
 
         $zip = $this->createZipTestModule();
-        $r = $this->manager->install($zip, $error);
+        $r = $this->manager->install($zip, $config, $error);
         $this->assertEmpty($error);
         $this->assertTrue($r);
 
@@ -145,7 +145,7 @@ class ManagerTest extends Test
     public function testSubModule()
     {
         $zip = $this->createZipTestModule('', 'submodule');
-        $this->manager->install($zip, $error);
+        $this->manager->install($zip, $config, $error);
         $list = $this->manager->getModulesClassesList();
         $this->assertCount(2, $list);
     }
@@ -153,16 +153,16 @@ class ManagerTest extends Test
     public function testUpdate()
     {
         $zip = $this->createZipTestModule('update' . DIRECTORY_SEPARATOR);
-        $r = $this->manager->install($zip, $error);
+        $r = $this->manager->install($zip, $config, $error);
         $this->assertTrue($r, isset($error) ? $error : '');
     }
 
     public function testUninstall()
     {
-        $this->manager->uninstall(self::test_module_id, $e);
+        $this->manager->uninstall(self::test_module_id, $config, $e);
         $this->assertEmpty($e);
         $this->expectException('yii\base\Exception');
-        $this->manager->loadModule(self::test_module_id, $config);
+        $this->manager->loadModule(self::test_module_id, $c);
     }
 
 
