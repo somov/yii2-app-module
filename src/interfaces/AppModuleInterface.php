@@ -29,7 +29,7 @@ interface AppModuleInterface
 
     /**
      * Get a event handler object
-     * @return EventHandlerInterface
+     * @return object
      */
     public function getModuleEventHandler();
 

@@ -9,9 +9,8 @@ namespace mtest\components;
 
 
 use Codeception\TestCase\Test;
-
-use PHPUnit\Framework\Error\Error;
 use somov\appmodule\components\Manager;
+use somov\appmodule\exceptions\ModuleNotFoundException;
 use testModule\components\TestInterface;
 use yii\base\Application;
 use yii\caching\ExpressionDependency;
@@ -53,10 +52,8 @@ class ManagerTest extends Test
     {
         $this->cleare();
         $zip = $this->createZipTestModule('', 'namespaceapp');
-        $r = $this->manager->install($zip, $config, $error);
-        $this->assertTrue($r, isset($error) ? $error : '');
 
-
+        $this->assertTrue($this->manager->install($zip, $config));
     }
 
     /**
@@ -67,8 +64,7 @@ class ManagerTest extends Test
         $this->cleare();
 
         $zip = $this->createZipTestModule();
-        $r = $this->manager->install($zip, $config, $error);
-        $this->assertEmpty($error);
+        $r = $this->manager->install($zip, $config);
         $this->assertTrue($r);
 
         $module = \testModule\Module::getInstance();
@@ -78,7 +74,6 @@ class ManagerTest extends Test
         $test = $config['type'];
         $this->assertSame('eee', $test);
         $description = $config->description;
-
 
         $app = \Yii::$app;
         $app->state = Application::STATE_HANDLING_REQUEST;
@@ -92,9 +87,8 @@ class ManagerTest extends Test
 
     public function testReset()
     {
-        $this->manager->reset(self::test_module_id, $config, $error);
+        $this->manager->reset(self::test_module_id, $config);
         $this->assertConfig($config);
-        $this->assertEmpty($error);
     }
 
     public function testGetListClasses()
@@ -134,34 +128,35 @@ class ManagerTest extends Test
 
     }
 
-    public function testGetCategoriesArray()
-    {
-        $this->assertCount(1, $this->manager->getCategoriesArray());
-        $this->assertCount(1, $this->manager->getCategoriesArray(['enabled' => true], true));
-        $this->assertCount(0, $this->manager->getCategoriesArray(['enabled' => false]));
 
-    }
-
-    public function testSubModule()
+    public function testSubModuleInstall()
     {
+        $this->cleare();
+
+        $zip = $this->createZipTestModule('', 'test-module');
+        $this->manager->install($zip, $config);
+
         $zip = $this->createZipTestModule('', 'submodule');
-        $this->manager->install($zip, $config, $error);
-        $list = $this->manager->getModulesClassesList();
-        $this->assertCount(2, $list);
+        $this->manager->install($zip, $config);
+
+        $module = $this->manager->loadModule('test-module/submodule');
+
+        $this->assertInstanceOf(\subModule\Module::class, $module);
+
     }
 
     public function testUpdate()
     {
         $zip = $this->createZipTestModule('update' . DIRECTORY_SEPARATOR);
-        $r = $this->manager->install($zip, $config, $error);
-        $this->assertTrue($r, isset($error) ? $error : '');
+        $r = $this->manager->install($zip, $config);
+        $this->assertTrue($r);
     }
 
     public function testUninstall()
     {
-        $this->manager->uninstall(self::test_module_id, $config, $e);
-        $this->assertEmpty($e);
-        $this->expectException('yii\base\Exception');
+
+        $this->assertTrue($this->manager->uninstall(self::test_module_id, $config));
+        $this->expectException(ModuleNotFoundException::class);
         $this->manager->loadModule(self::test_module_id, $c);
     }
 
@@ -176,8 +171,8 @@ class ManagerTest extends Test
                 ],
                 'cacheDependencyConfig' => [
                     'class' => ExpressionDependency::class,
-                    'params' => ['lang'=>\Yii::$app->language],
-                    'expression' =>  '$this->params["lang"] === \Yii::$app->language'
+                    'params' => ['lang' => \Yii::$app->language],
+                    'expression' => '$this->params["lang"] === \Yii::$app->language'
                 ]
             ]
         );

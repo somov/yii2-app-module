@@ -31,10 +31,6 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 
     use ConfigParams;
 
-    const METHOD_TYPE_EVENT_BY_METHOD = '_eventByMethod';
-
-    const METHOD_TYPE_EVENT_TO_EVENT = '_eventToEventObject';
-
     const LOC_FILE = 'enabled.loc';
 
     private $_path;
@@ -51,11 +47,11 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     protected function attributesNames()
     {
         return [
+            '', //empty index
             'id',
             'alias',
             'type',
             'name',
-            'eventMethod',
             'settingsModel',
             'settingsRoute',
             'settingsView',
@@ -281,5 +277,6 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         }
         return null;
     }
+
 
 }

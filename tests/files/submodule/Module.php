@@ -11,7 +11,7 @@ use yii\base\Exception;
 /**
  *  module definition class
  */
-class Module extends \yii\base\Module implements AppModuleInterface, EventHandlerInterface
+class Module extends \yii\base\Module implements AppModuleInterface
 {
 
 
@@ -32,7 +32,6 @@ class Module extends \yii\base\Module implements AppModuleInterface, EventHandle
         $config->description = 'Test';
         $config->version = '1.0.1';
         $config->events = self::getEvents();
-        $config->eventMethod = Config::METHOD_TYPE_EVENT_BY_METHOD;
         $config->category = 'Test';
         $config->parentModule = 'test-module';
     }

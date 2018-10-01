@@ -2,6 +2,8 @@
 
 namespace somov\appmodule;
 
+use Codeception\Exception\ModuleConfigException;
+use yii\base\Exception;
 use yii\base\Model;
 
 /**
@@ -9,10 +11,10 @@ use yii\base\Model;
  *
  * @package somov\appmodule
  * @property string id
+ * @property string uniqueId
  * @property string alias
  * @property string type
  * @property string name
- * @property string eventMethod
  * @property string|Model settingsModel
  * @property string settingsRoute
  * @property string settingsView
@@ -35,10 +37,14 @@ trait ConfigParams
     /**
      * @param $attribute
      * @return int
+     * @throws Exception
      */
     private function getAid($attribute)
     {
-        return (integer)array_search($attribute, $this->attributesNames());
+        if (!$id = array_search($attribute, $this->attributesNames())) {
+            throw new Exception('Invalid config param' . $attribute);
+        }
+        return (integer)$id;
     }
 
     /**
@@ -76,7 +82,12 @@ trait ConfigParams
      */
     public function getId()
     {
-        return $this->getter($this->getAid('id'), null);
+        return $this->getter('id', null);
+    }
+
+    public function getUniqueId()
+    {
+        return $this->parentModule ? ltrim($this->parentModule . '/' . $this->id, '/') : $this->id;
     }
 
     /**
@@ -134,22 +145,6 @@ trait ConfigParams
     public function setType($type)
     {
         $this->setter('type', $type);
-    }
-
-    /**
-     * @return string
-     */
-    public function getEventMethod()
-    {
-        return $this->getter('eventMethod', Config::METHOD_TYPE_EVENT_TO_EVENT);
-    }
-
-    /**
-     * @param string $eventMethod
-     */
-    public function setEventMethod($eventMethod)
-    {
-        $this->setter('eventMethod', $eventMethod);
     }
 
     /**
