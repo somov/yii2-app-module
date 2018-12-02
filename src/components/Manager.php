@@ -18,10 +18,12 @@ use somov\common\traits\ContainerCompositions;
 use yii\base\BootstrapInterface;
 use yii\base\Component;
 use yii\base\Event;
+use yii\base\InvalidConfigException;
 use yii\base\Module;
 use yii\base\Security;
 use yii\base\UnknownMethodException;
 use yii\caching\Cache;
+use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
 use yii\web\Application;
@@ -74,9 +76,14 @@ class Manager extends Component implements BootstrapInterface
     public $cacheDependencyConfig = null;
 
     /**
+     * @var string|callable
+     */
+    protected $cacheCurrentVariation = null;
+
+    /**
      * @var array|callable
      */
-    public $cacheVariations = [];
+    protected $cacheVariations = [];
 
     /**
      * Bootstrap method to be called during application bootstrap stage.
@@ -94,34 +101,70 @@ class Manager extends Component implements BootstrapInterface
 
 
     /**
-     * @return \yii\caching\CacheInterface
+     * @return \yii\caching\CacheInterface|object
      */
     protected function getCache()
     {
         if (is_string($this->cacheConfig)) {
             return \Yii::$app->{$this->cacheConfig};
         }
-        $config = $this->cacheConfig;
-        return $this->getComposition(ArrayHelper::remove($config, 'class'), $config);
-    }
-
-    private function getCacheKey()
-    {
-        if (is_callable($this->cacheVariations)) {
-            $this->cacheVariations = call_user_func($this->cacheVariations);
-        }
-        return array_merge([__CLASS__], (array)$this->cacheVariations);
+        return $this->getCompositionYii($this->cacheConfig);
     }
 
     /**
-     * @return null|object
+     * @param array $variation
+     * @return array
+     */
+    private function getCacheKey($variation = null)
+    {
+        $variation = (!empty($variation)) ? $variation : $this->cacheCurrentVariation;
+        return array_merge([__CLASS__], (array)$variation);
+    }
+
+    /**
+     * @return $this
+     */
+    public function clearCache()
+    {
+        foreach ($this->cacheVariations as $variation) {
+            $this->getCache()->offsetUnset($this->getCacheKey($variation));
+        }
+        return $this;
+    }
+
+    /**
+     * @param string|callable $value
+     */
+    public function setCacheCurrentVariation($value)
+    {
+        $this->cacheCurrentVariation = (is_callable($value))
+            ? call_user_func($value) : $value;
+
+        if (isset($this->cacheCurrentVariation) && !is_array($this->cacheVariations) &&
+            in_array($this->cacheCurrentVariation, $this->cacheVariations)) {
+            throw new InvalidConfigException('Unknown cache variation ');
+        }
+    }
+
+    /**
+     * @param array|callable $cacheVariations
+     */
+    public function setCacheVariations($cacheVariations)
+    {
+        $this->cacheVariations = (is_callable($cacheVariations))
+            ? call_user_func($cacheVariations) : $cacheVariations;
+    }
+
+
+    /**
+     * @return Dependency|object
      */
     private function getCacheDependency()
     {
         if (is_array($this->cacheDependencyConfig)) {
-            return \Yii::createObject($this->cacheDependencyConfig);
+            $this->cacheDependencyConfig = \Yii::createObject($this->cacheDependencyConfig);
         }
-        return null;
+        return $this->cacheDependencyConfig;
     }
 
 
@@ -427,12 +470,6 @@ class Manager extends Component implements BootstrapInterface
 
     }
 
-
-    public function clearCache()
-    {
-        $this->getCache()->offsetUnset($this->getCacheKey());
-        return $this;
-    }
 
 
     private function getTmpPath($forFile = null)

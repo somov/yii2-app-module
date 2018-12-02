@@ -169,6 +169,12 @@ class ManagerTest extends Test
                 'cacheConfig' => [
                     'class' => FileCache::class,
                 ],
+
+                'cacheVariations' => [
+                    'uk',
+                    'en'
+                ],
+                'cacheCurrentVariation' => 'en',
                 'cacheDependencyConfig' => [
                     'class' => ExpressionDependency::class,
                     'params' => ['lang' => \Yii::$app->language],
