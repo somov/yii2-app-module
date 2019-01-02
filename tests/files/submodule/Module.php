@@ -14,6 +14,10 @@ use yii\base\Exception;
 class Module extends \yii\base\Module implements AppModuleInterface
 {
 
+    public static function getAppModuleId()
+    {
+        return 'submodule';
+    }
 
     public function viewBeginPage($event)
     {
@@ -27,13 +31,12 @@ class Module extends \yii\base\Module implements AppModuleInterface
      */
     public static function configure(Config $config)
     {
-        $config->id = 'submodule';
         $config->name = 'Test';
         $config->description = 'Test';
         $config->version = '1.0.1';
         $config->events = self::getEvents();
         $config->category = 'Test';
-        $config->parentModule = 'test-module';
+        $config->parentModule = \testModule\Module::getAppModuleId();
     }
 
     public function install()
@@ -46,7 +49,7 @@ class Module extends \yii\base\Module implements AppModuleInterface
         return true;
     }
 
-    /**@return EventHandlerInterface */
+
     public function getModuleEventHandler()
     {
         return $this;

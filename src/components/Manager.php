@@ -169,7 +169,7 @@ class Manager extends Component implements BootstrapInterface
 
 
     /**
-     * @param $class
+     * @param string|AppModuleInterface $class
      * @param $namespace
      * @param $path
      * @return Config|null
@@ -186,6 +186,7 @@ class Manager extends Component implements BootstrapInterface
                 ]
             ]);
             $class::configure($config);
+            $config->id = $class::getAppModuleId();
             $config->isEnabled();
             return $config;
         };
@@ -398,14 +399,13 @@ class Manager extends Component implements BootstrapInterface
      */
     private function addAppModulesToApplication()
     {
-        foreach ($this->getFilteredClassesList(['enabled' => true]) as $config) {
+        foreach ($this->getModulesClassesList() as $config) {
             /**@var  Config $config */
-            $this->addModule($config);
-        }
-
-        foreach ($this->getFilteredClassesList(['enabled' => false]) as $config) {
-            /**@var  Config $config */
-            $this->setModuleAlias($config);
+            if ($config->isEnabled()) {
+                $this->addModule($config);
+            } else {
+                $this->setModuleAlias($config);
+            }
         }
     }
 
@@ -469,7 +469,6 @@ class Manager extends Component implements BootstrapInterface
         call_user_func_array([$handler, $method], ['event' => $event]);
 
     }
-
 
 
     private function getTmpPath($forFile = null)

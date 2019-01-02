@@ -12,8 +12,14 @@ use somov\appmodule\Config;
 
 interface AppModuleInterface
 {
+    /**
+     * @return string
+     */
+    public static function getAppModuleId();
 
-
+    /**
+     * @param Config $config
+     */
     public static function configure(Config $config);
 
     /**

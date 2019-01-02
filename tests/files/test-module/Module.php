@@ -16,6 +16,10 @@ use yii\base\Exception;
 class Module extends \yii\base\Module implements AppModuleInterface, TestInterface
 {
 
+    public static function getAppModuleId()
+    {
+        return 'test-module';
+    }
 
     public function viewBeginPage($event)
     {
@@ -29,7 +33,6 @@ class Module extends \yii\base\Module implements AppModuleInterface, TestInterfa
      */
     public static function configure(Config $config)
     {
-        $config->id = 'test-module';
         $config->name = 'Test';
         $config->description = 'Test description';
         $config->version = '1.0.1';

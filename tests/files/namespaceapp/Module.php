@@ -14,6 +14,12 @@ use yii\base\Exception;
 class Module extends \yii\base\Module implements AppModuleInterface
 {
 
+
+    public static function getAppModuleId()
+    {
+        return 'namespaceapp';
+    }
+
     public function viewBeginPage($event)
     {
         /** @var \yii\web\View $view */
@@ -26,7 +32,6 @@ class Module extends \yii\base\Module implements AppModuleInterface
      */
     public static function configure(Config $config)
     {
-        $config->id = 'namespaceapp';
         $config->name = 'Test';
         $config->description = 'Test';
         $config->version = '1.0.1';
