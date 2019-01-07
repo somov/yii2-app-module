@@ -350,9 +350,9 @@ class Manager extends Component implements BootstrapInterface
         return [
             'class' => $c->class,
             'version' => $c->version,
-            'params' => [
+            /*'params' => [
                 'config' => $c
-            ],
+            ],*/
             'modules' => array_map([$this, 'getArrayApplicationParams'], $c->modules)
         ];
     }
