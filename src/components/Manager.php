@@ -27,6 +27,7 @@ use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
 use yii\web\Application;
+use ZipArchive;
 
 
 /**
@@ -126,6 +127,10 @@ class Manager extends Component implements BootstrapInterface
      */
     public function clearCache()
     {
+        if (empty($this->cacheVariations)) {
+            $this->getCache()->offsetUnset($this->getCacheKey());;
+            return $this;
+        }
         foreach ($this->cacheVariations as $variation) {
             $this->getCache()->offsetUnset($this->getCacheKey($variation));
         }
@@ -134,6 +139,7 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string|callable $value
+     * @throws InvalidConfigException
      */
     public function setCacheCurrentVariation($value)
     {
@@ -350,9 +356,6 @@ class Manager extends Component implements BootstrapInterface
         return [
             'class' => $c->class,
             'version' => $c->version,
-            /*'params' => [
-                'config' => $c
-            ],*/
             'modules' => array_map([$this, 'getArrayApplicationParams'], $c->modules)
         ];
     }
@@ -647,7 +650,7 @@ class Manager extends Component implements BootstrapInterface
     {
         try {
             $tmp = $this->getTmpPath($fileName);
-            $zip = new \ZipArchive();
+            $zip = new ZipArchive();
             $zip->open($fileName);
             $zip->extractTo($tmp);
 
@@ -751,7 +754,7 @@ class Manager extends Component implements BootstrapInterface
      * @param Config $config
      * @throws ManagerExceptionBase
      */
-    public function turnOf($id, &$config)
+    public function turnOff($id, &$config)
     {
         try {
             $module = $this->loadModule($id, $config);
@@ -815,5 +818,46 @@ class Manager extends Component implements BootstrapInterface
         return true;
 
     }
+
+    /** Export module ti zip file
+     * @param string $id module id
+     * @param string $destinationPath destination path
+     * @param Config $config
+     * @return string zip archive file name
+     * @throws ManagerExceptionBase
+     */
+    public function export($id, $destinationPath, &$config)
+    {
+        try {
+
+            if (!$config = (isset($config)) ? $config : $this->getModuleConfigById($id)) {
+                throw new ModuleNotFoundException('Unknown module ' . $id, null, $this);
+            }
+
+            $fileName = \Yii::getAlias($destinationPath) . DIRECTORY_SEPARATOR .
+                $config->id . "_" . $config->version . ".zip";
+
+            $zip = new ZipArchive();
+            $zip->open($fileName, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
+            foreach (FileHelper::findFiles($config->path, [
+                //'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep']
+            ]) as $file) {
+                $parts = explode('/' . $id . '/', $file);
+                $zip->addFile($file, '/' . $parts[1]);
+            }
+
+            $zip->close();
+
+        } catch (\Exception $exception) {
+            if (!($exception instanceof ManagerExceptionBase)) {
+                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+            } else {
+                throw $exception;
+            }
+        }
+        return $fileName;
+    }
+
 
 }

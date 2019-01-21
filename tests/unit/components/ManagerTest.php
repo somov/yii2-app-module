@@ -152,6 +152,16 @@ class ManagerTest extends Test
         $this->assertTrue($r);
     }
 
+
+    public function testExportImport()
+    {
+        $zip = $this->manager->export(self::test_module_id, '@ext/_output', $config);
+        $this->manager->uninstall(self::test_module_id, $config);
+        $r = $this->manager->install($zip, $config);
+        $this->assertTrue($r);
+    }
+
+
     public function testUninstall()
     {
 
@@ -209,5 +219,7 @@ class ManagerTest extends Test
         $zip->close();
 
         return $file;
+
+
     }
 }
