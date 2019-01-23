@@ -841,7 +841,7 @@ class Manager extends Component implements BootstrapInterface
             $zip->open($fileName, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
             foreach (FileHelper::findFiles($config->path, [
-                //'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep']
+                'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep']
             ]) as $file) {
                 $parts = explode('/' . $id . '/', $file);
                 $zip->addFile($file, '/' . $parts[1]);
