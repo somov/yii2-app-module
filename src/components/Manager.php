@@ -419,9 +419,19 @@ class Manager extends Component implements BootstrapInterface
     {
         foreach ($config->events as $class => $classEvents) {
             foreach ($classEvents as $classEvent) {
-                Event::on($class, $classEvent, [$this, '_eventByMethod'], [
+                $append = true;
+                if (is_array($classEvent)) {
+                    if (empty($classEvent['name'])) {
+                        throw  new InvalidConfigException('Attribute name reared for class event ' . $class . ' options. Module ' . $config->id);
+                    }
+                    $name = $classEvent['name'];
+                    $append = ArrayHelper::getValue($classEvent, 'append', true);
+                } else {
+                    $name = $classEvent;
+                }
+                Event::on($class, $name, [$this, '_eventByMethod'], [
                     'moduleConfig' => $config
-                ]);
+                ], $append);
             }
         }
     }
