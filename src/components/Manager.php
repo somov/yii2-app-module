@@ -27,6 +27,7 @@ use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
+use yii\web\Application;
 use ZipArchive;
 
 
@@ -400,6 +401,12 @@ class Manager extends Component implements BootstrapInterface
     private function addAppModulesToApplication()
     {
         foreach ($this->getModulesClassesList() as $config) {
+
+            //игнорирование модулей которые не раюотают при xhr
+            if (Yii::$app instanceof Application && Yii::$app->request->isAjax && !$config->xhrActive) {
+                continue;
+            }
+
             /**@var  Config $config */
             if ($config->isEnabled()) {
                 $this->addModule($config);

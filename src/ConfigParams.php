@@ -23,6 +23,7 @@ use yii\base\Model;
  * @property string version
  * @property string category = 'Not set'
  * @property string author
+ * @property boolean xhrActive = true
  * @property array events = []
  * @property array urlRules = []
  * @property boolean appendRoutes = false
@@ -41,6 +42,7 @@ trait ConfigParams
      */
     private function getAid($attribute)
     {
+
         if (!$id = array_search($attribute, $this->attributesNames())) {
             throw new Exception('Invalid config param' . $attribute);
         }
@@ -273,6 +275,22 @@ trait ConfigParams
     public function setAuthor($author)
     {
         $this->setter('author', $author);
+    }
+
+    /**
+     * @return boolean
+     */
+    public function getXhrActive()
+    {
+        return $this->getter('xhr', true);
+    }
+
+    /**
+     * @param boolean $value
+     */
+    public function setXhrActive($value)
+    {
+        $this->setter('xhr', $value);
     }
 
     /**
