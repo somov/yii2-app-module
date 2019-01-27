@@ -476,14 +476,19 @@ class Manager extends Component implements BootstrapInterface
         }
 
         $handler = $module->getModuleEventHandler();
-
         $method = self::generateMethodName($event);
 
-        $method = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
+        $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
 
-        call_user_func_array([$handler, $method], ['event' => $event]);
-
-
+        try {
+            call_user_func_array([$handler, $m], ['event' => $event]);
+        } catch (UnknownMethodException $exception) {
+            $message = "Unknown method $method and  method handleModuleEvent in  " . get_class($handler);
+            if (YII_DEBUG) {
+                throw new ManagerExceptionBase($message, $exception, $this);
+            }
+            Yii::error($message);
+        }
     }
 
 
