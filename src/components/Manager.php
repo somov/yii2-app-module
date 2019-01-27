@@ -15,6 +15,7 @@ use somov\appmodule\exceptions\ModuleNotFoundException;
 use somov\appmodule\interfaces\AppModuleInterface;
 use somov\common\helpers\ReflectionHelper;
 use somov\common\traits\ContainerCompositions;
+use Yii;
 use yii\base\BootstrapInterface;
 use yii\base\Component;
 use yii\base\Event;
@@ -26,7 +27,6 @@ use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
-use yii\web\Application;
 use ZipArchive;
 
 
@@ -63,8 +63,6 @@ class Manager extends Component implements BootstrapInterface
 
     public $baseNameSpace = 'app\modules';
 
-    public $processAjax = false;
-
     /**
      * @var array|string
      */
@@ -92,10 +90,6 @@ class Manager extends Component implements BootstrapInterface
      */
     public function bootstrap($app)
     {
-        if (!$this->processAjax && $app instanceof Application && $app->request->isAjax) {
-            return;
-        }
-
         $this->addAppModulesToApplication();
         $this->registerEvents();
     }
@@ -266,38 +260,41 @@ class Manager extends Component implements BootstrapInterface
         return $config;
     }
 
-    /** Массив конфигураций модулей = ['id' => '', 'path' => '', 'enabled', 'class']
-     * если нет в кеше - обходит каталог из альяса @modulesAlias
+    /** Массив конфигураций модулей
+     * поиск по директориям $this->places если нет в кеше
      * @return Config[]
      */
     public function getModulesClassesList()
     {
-
-        $places = $this->places;
-
-        return $this->getCache()->getOrSet($this->getCacheKey(), function () use ($places) {
+        return $this->getCache()->getOrSet($this->getCacheKey(), function () {
             $r = [];
-            foreach ($places as $place => $alias) {
-                foreach (FileHelper::findFiles(\Yii::getAlias($alias), [
-                    'only' => ['pattern' => '*Module.php']
-                ]) as $file) {
-                    if ($config = $this->initConfig($file)) {
-                        if (isset($config->parentModule) && isset($r[$config->parentModule])) {
-                            /** @var Config $parent */
-                            $parent = $r[$config->parentModule];
-                            $parent->addModules([
-                                $config->id => $config
-                            ]);
-                        } else {
-                            $r[$config->id] = $config;
-                        }
-                    }
-                }
+            foreach ($this->places as $place => $alias) {
+                $r = array_merge($r, $this->findModulesConfig(Yii::getAlias($alias)));
             }
             return $r;
         }, null, $this->getCacheDependency());
     }
 
+    /**
+     * Поиск модулей в каталоге
+     * @param string $path
+     * @return Config[]
+     */
+    protected function findModulesConfig($path)
+    {
+        $r = [];
+        $dirs = FileHelper::findDirectories($path, ['recursive' => false]);
+        foreach ($dirs as $dir) {
+            if ($config = $this->initConfig($dir . DIRECTORY_SEPARATOR . 'Module.php')) {
+                $r[$config->id] = $config;
+                $path = $config->path . DIRECTORY_SEPARATOR . 'modules';
+                if (file_exists($path)) {
+                    $config->addModules($this->findModulesConfig($path));
+                }
+            }
+        }
+        return $r;
+    }
 
     /**
      * @param array $filter
@@ -464,14 +461,19 @@ class Manager extends Component implements BootstrapInterface
 
     /** Передача события объекту обработчику
      * @param Event $event
-     * @deprecated
      */
     public function _eventByMethod($event)
     {
         /** @var Config $config */
         $config = $event->data['moduleConfig'];
-        /** @var Module|AppModuleInterface $module */
-        $module = $this->loadModule(null, $config);
+
+        try {
+            /** @var Module|AppModuleInterface $module */
+            $module = $this->loadModule(null, $config);
+        } catch (ModuleNotFoundException $exception) {
+            $this->clearCache();
+            return;
+        }
 
         $handler = $module->getModuleEventHandler();
 
@@ -480,6 +482,7 @@ class Manager extends Component implements BootstrapInterface
         $method = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
 
         call_user_func_array([$handler, $method], ['event' => $event]);
+
 
     }
 
@@ -526,6 +529,7 @@ class Manager extends Component implements BootstrapInterface
         }
 
         if (empty($module)) {
+            $id = (isset($config)) ? $config->id : $id;
             throw new ModuleNotFoundException('Unknown module ' . $id, null, $this);
         }
 
