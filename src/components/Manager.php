@@ -560,7 +560,7 @@ class Manager extends Component implements BootstrapInterface
             return true;
         }
         /** @var Module|AppModuleInterface $instance */
-        $instance = \Yii::createObject($new->class, ['id' => $new->id, \Yii::$app]);
+        $instance = \Yii::createObject($new->class, [$new->id, \Yii::$app]);
 
         $this->trigger(self::EVENT_BEFORE_UPGRADE, new ModuleEvent(['module' => $instance]));
 
@@ -573,7 +573,11 @@ class Manager extends Component implements BootstrapInterface
         $instance->version = $new->version;
 
         $this->clearCache();
-        $this->trigger(self::EVENT_AFTER_UPGRADE, new ModuleEvent(['module' => $instance]));
+        $this->trigger(self::EVENT_AFTER_UPGRADE, new ModuleUpgradeEvent([
+            'module' => $instance,
+            'newVersion' => $new->version,
+            'oldVersion' => $exist->version,
+        ]));
 
         return true;
     }

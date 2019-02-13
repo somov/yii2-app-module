@@ -57,7 +57,7 @@ class ManagerTest extends Test
     }
 
     /**
-     * @expectedException \yii\base\ExitException
+     * @expectedException  \yii\base\ExitException
      */
     public function testInstall()
     {
@@ -81,7 +81,7 @@ class ManagerTest extends Test
 
         \Yii::$app->end(Application::STATE_BEFORE_REQUEST);
 
-        $this->assertEquals(\Yii::$app->response->data, $config->id);
+        $this->assertEquals(\Yii::$app->params['test'], 'test');
 
     }
 
@@ -145,10 +145,15 @@ class ManagerTest extends Test
 
     }
 
-    public function testUpdate()
+    public function testUpgrade()
     {
+        $v = null;
         $zip = $this->createZipTestModule('update' . DIRECTORY_SEPARATOR);
+        $this->manager->on(Manager::EVENT_AFTER_UPGRADE, function ($event) use (&$v) {
+            $v = $event->newVersion;
+        });
         $r = $this->manager->install($zip, $config);
+        $this->assertSame('9.9.9', $v);
         $this->assertTrue($r);
     }
 

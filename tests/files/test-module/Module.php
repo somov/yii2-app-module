@@ -3,10 +3,9 @@
 namespace testModule;
 
 
-use testModule\components\TestInterface;
 use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
+use testModule\components\TestInterface;
 use yii\base\Event;
 use yii\base\Exception;
 
@@ -67,7 +66,7 @@ class Module extends \yii\base\Module implements AppModuleInterface, TestInterfa
 
     public function applicationAfterRequest()
     {
-        \Yii::$app->response->data = $this->id;
+        \Yii::$app->params['test'] = $this->getTest();
     }
 
 

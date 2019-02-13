@@ -10,6 +10,11 @@ namespace somov\appmodule\interfaces;
 
 use somov\appmodule\Config;
 
+/**
+ * Interface AppModuleInterface
+ * @package somov\appmodule\interfaces
+ * @method bool upgrade
+ */
 interface AppModuleInterface
 {
     /**
