@@ -40,7 +40,7 @@ interface AppModuleInterface
 
     /**
      * Get a event handler object
-     * @return object
+     * @return object|AppModuleEventHandler
      */
     public function getModuleEventHandler();
 

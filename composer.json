@@ -16,6 +16,7 @@
   "require": {
     "php": ">=5.6.0",
     "ext-zip": "*",
+    "ext-mbstring": "*",
     "yiisoft/yii2": ">=2.0.14",
     "somov/yii2-common": ">=1.1.1"
   },

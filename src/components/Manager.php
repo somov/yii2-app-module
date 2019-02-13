@@ -12,6 +12,7 @@ use somov\appmodule\Config;
 use somov\appmodule\exceptions\InvalidModuleConfiguration;
 use somov\appmodule\exceptions\ManagerExceptionBase;
 use somov\appmodule\exceptions\ModuleNotFoundException;
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
 use somov\common\helpers\ReflectionHelper;
 use somov\common\traits\ContainerCompositions;
@@ -426,7 +427,7 @@ class Manager extends Component implements BootstrapInterface
                 $append = true;
                 if (is_array($classEvent)) {
                     if (empty($classEvent['name'])) {
-                        throw  new InvalidConfigException('Attribute name reared for class event ' . $class . ' options. Module ' . $config->id);
+                        throw  new InvalidConfigException('Attribute name required for class event ' . $class . ' options. Module ' . $config->id);
                     }
                     $name = $classEvent['name'];
                     $append = ArrayHelper::getValue($classEvent, 'append', true);
@@ -484,6 +485,12 @@ class Manager extends Component implements BootstrapInterface
 
         $handler = $module->getModuleEventHandler();
         $method = self::generateMethodName($event);
+
+        if ($handler instanceof AppModuleEventHandler) {
+            if ($handler->handle($event, $method)) {
+                return;
+            }
+        }
 
         $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
 
@@ -549,12 +556,15 @@ class Manager extends Component implements BootstrapInterface
 
     }
 
-    /**
+    /** Обновление модуля
      * @param Config $exist
      * @param Config $new
+     * @param string $fileName
      * @return bool
+     * @throws InvalidConfigException
+     * @throws \yii\base\ErrorException
      */
-    protected function upgrade(Config $exist, Config $new)
+    protected function upgrade(Config $exist, Config $new, $fileName)
     {
         if (version_compare($exist->version, $new->version, '>=')) {
             return true;
@@ -573,10 +583,12 @@ class Manager extends Component implements BootstrapInterface
         $instance->version = $new->version;
 
         $this->clearCache();
+
         $this->trigger(self::EVENT_AFTER_UPGRADE, new ModuleUpgradeEvent([
             'module' => $instance,
             'newVersion' => $new->version,
             'oldVersion' => $exist->version,
+            'fileName' => $fileName
         ]));
 
         return true;
@@ -689,7 +701,7 @@ class Manager extends Component implements BootstrapInterface
             $config = $this->readConfig($file, $moduleClassInfo);
 
             if ($c = $this->getModuleConfigById($config->uniqueId)) {
-                if ($this->upgrade($c, $config)) {
+                if ($this->upgrade($c, $config, $fileName)) {
                     return true;
                 }
             }

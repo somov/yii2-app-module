@@ -1,11 +1,11 @@
-<?php
+<?php /** @noinspection ALL */
 
 namespace testModule;
 
 
 use somov\appmodule\Config;
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
 use testModule\components\TestInterface;
 use yii\base\Event;
 use yii\base\Exception;
@@ -13,7 +13,7 @@ use yii\base\Exception;
 /**
  *  module definition class
  */
-class Module extends \yii\base\Module implements AppModuleInterface, TestInterface
+class Module extends \yii\base\Module implements AppModuleInterface, TestInterface, AppModuleEventHandler
 {
 
     public static function getAppModuleId()
@@ -90,5 +90,16 @@ class Module extends \yii\base\Module implements AppModuleInterface, TestInterfa
     public function getTest()
     {
         return 'test';
+    }
+
+
+    /**
+     * @param Event $event
+     * @param $method
+     * @return boolean
+     */
+    public function handle(Event $event, $method)
+    {
+        return false;
     }
 }
