@@ -285,6 +285,9 @@ class Manager extends Component implements BootstrapInterface
     protected function findModulesConfig($path)
     {
         $r = [];
+        if (empty($path)) {
+            return $r;
+        }
         $dirs = FileHelper::findDirectories($path, ['recursive' => false]);
         foreach ($dirs as $dir) {
             if ($config = $this->initConfig($dir . DIRECTORY_SEPARATOR . 'Module.php')) {
@@ -483,7 +486,10 @@ class Manager extends Component implements BootstrapInterface
             return;
         }
 
-        $handler = $module->getModuleEventHandler();
+        if (!$handler = $module->getModuleEventHandler()){
+            return;
+        }
+
         $method = self::generateMethodName($event);
 
         if ($handler instanceof AppModuleEventHandler) {
@@ -502,6 +508,11 @@ class Manager extends Component implements BootstrapInterface
                 throw new ManagerExceptionBase($message, $exception, $this);
             }
             Yii::error($message);
+        } catch (\Exception $exception) {
+            if (YII_DEBUG) {
+                throw $exception;
+            }
+            Yii::error($exception->getMessage());
         }
     }
 
@@ -609,33 +620,22 @@ class Manager extends Component implements BootstrapInterface
 
 
     /**
-     * @param string $method
      * @param string $eventBefore
      * @param string $eventAfter
      * @param Module|AppModuleInterface $module
-     * @param object|null $target
+     * @param \Closure $callback
      * @return bool
      */
-    private function executeMethod($method, $eventBefore, $eventAfter, $module, $target = null)
+    private function executeMethod($eventBefore, $eventAfter, $module, \Closure $callback)
     {
         $event = new ModuleEvent(['module' => $module]);
-
-        $target = ($target) ? $target : $module;
 
         if (isset($eventBefore)) {
             $this->trigger($eventBefore, $event);
         }
 
         if ($event->isValid) {
-
-            try {
-                $result = call_user_func([$target, $method]);
-            } catch (UnknownMethodException $exception) {
-                $r = new \ReflectionMethod($target, $method);
-                $r->setAccessible(true);
-                $result = $r->invoke($target);
-            }
-
+            $result = call_user_func($callback);
             if ($result) {
                 if (isset($eventAfter)) {
                     $event->handled = false;
@@ -651,34 +651,54 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $module \yii\base\Module|AppModuleInterface
+     * @param boolean $isReset
      * @return bool
      */
-    protected function internalUnInstall($module)
+    protected function internalUnInstall($module, $isReset)
     {
-        return $this->executeMethod('uninstall', self::EVENT_BEFORE_UNINSTALL,
-            self::EVENT_AFTER_UNINSTALL, $module);
+        return $this->executeMethod(self::EVENT_BEFORE_UNINSTALL,
+            self::EVENT_AFTER_UNINSTALL, $module, function () use ($module, $isReset) {
+                return ($module->hasMethod('uninstall') ? $module->uninstall($isReset) : true);
+            });
     }
 
     /**
      * @param $module \yii\base\Module|AppModuleInterface
+     * @param boolean $isReset
      * @return bool
      */
-    protected function internalInstall($module)
+    protected function internalInstall($module, $isReset)
     {
-        return $this->executeMethod('install', self::EVENT_BEFORE_INSTALL,
-            self::EVENT_AFTER_INSTALL, $module);
+        return $this->executeMethod(self::EVENT_BEFORE_INSTALL,
+            self::EVENT_AFTER_INSTALL, $module, function () use ($module, $isReset) {
+                return ($module->hasMethod('install') ? $module->install($isReset) : true);
+            });
     }
 
     /**
      * @param $module \yii\base\Module|AppModuleInterface
      * @param Config $config
      * @param string $state
+     * @return bool
      */
     protected function internalChangeState($module, $config, $state)
     {
-        $this->executeMethod($state, self::EVENT_BEFORE_CHANGE_STATE,
+        return $this->executeMethod(self::EVENT_BEFORE_CHANGE_STATE,
             self::EVENT_AFTER_CHANGE_STATE,
-            $module, $config);
+            $module, function () use ($config, $state, $module) {
+
+                $r = new \ReflectionMethod($config, $state);
+                $r->setAccessible(true);
+
+                $result = $r->invoke($config);
+
+                if ($result && $module->hasMethod('changedState')) {
+                    $result = $module->changedState($config->isEnabled());
+                }
+
+                return $result;
+            });
+
     }
 
 
@@ -729,7 +749,7 @@ class Manager extends Component implements BootstrapInterface
                     ->clearCache()
                     ->loadModule($config->uniqueId, $dstConfig);
 
-            if ($this->internalInstall($module)) {
+            if ($this->internalInstall($module, false)) {
                 if ($this->isAutoActivate) {
                     $this->turnOn(null, $dstConfig);
                 }
@@ -756,7 +776,7 @@ class Manager extends Component implements BootstrapInterface
     {
         try {
             $module = $this->loadModule($id, $config);
-            if ($this->internalUnInstall($module)) {
+            if ($this->internalUnInstall($module, false)) {
                 FileHelper::removeDirectory($config->path);
             }
             $this->clearCache();
@@ -843,8 +863,8 @@ class Manager extends Component implements BootstrapInterface
         try {
             $module = $this->loadModule($id, $config);
 
-            if ($this->internalUnInstall($module)) {
-                $this->internalInstall($module);
+            if ($this->internalUnInstall($module, true)) {
+                $this->internalInstall($module, true);
             }
             if ($this->isAutoActivate) {
                 $this->turnOn($id, $config);

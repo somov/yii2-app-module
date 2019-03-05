@@ -13,9 +13,8 @@ use somov\appmodule\Config;
 /**
  * Interface AppModuleInterface
  * @package somov\appmodule\interfaces
- * @method bool upgrade
  */
-interface AppModuleInterface
+interface AppModuleInterface extends AppModuleBaseInterface
 {
     /**
      * @return string
@@ -27,20 +26,10 @@ interface AppModuleInterface
      */
     public static function configure(Config $config);
 
-    /**
-     * @return bool
-     */
-    public function install();
-
-    /**
-     * @return bool
-     */
-    public function uninstall();
-
 
     /**
      * Get a event handler object
-     * @return object|AppModuleEventHandler
+     * @return object|AppModuleEventHandler|null
      */
     public function getModuleEventHandler();
 
