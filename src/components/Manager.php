@@ -865,6 +865,7 @@ class Manager extends Component implements BootstrapInterface
 
             if ($this->internalUnInstall($module, true)) {
                 $this->internalInstall($module, true);
+                $this->internalChangeState($module, $config,  ($config->enabled) ? 'turnOn' : 'turnOff');
             }
             if ($this->isAutoActivate) {
                 $this->turnOn($id, $config);
