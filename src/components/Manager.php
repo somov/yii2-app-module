@@ -349,9 +349,10 @@ class Manager extends Component implements BootstrapInterface
     }
 
 
-    /**Параметры конфигураци приложения
+    /**Параметры конфигурации приложения
      * @param Config $c
      * @return array
+     * @recursive
      */
     protected function getArrayApplicationParams(Config $c)
     {
@@ -406,7 +407,7 @@ class Manager extends Component implements BootstrapInterface
     {
         foreach ($this->getModulesClassesList() as $config) {
 
-            //игнорирование модулей которые не раюотают при xhr
+            //игнорирование модулей которые не работают при xhr
             if (Yii::$app instanceof Application && Yii::$app->request->isAjax && !$config->xhrActive) {
                 continue;
             }
@@ -428,17 +429,20 @@ class Manager extends Component implements BootstrapInterface
         foreach ($config->events as $class => $classEvents) {
             foreach ($classEvents as $classEvent) {
                 $append = true;
+                $method = null;
                 if (is_array($classEvent)) {
                     if (empty($classEvent['name'])) {
                         throw  new InvalidConfigException('Attribute name required for class event ' . $class . ' options. Module ' . $config->id);
                     }
                     $name = $classEvent['name'];
+                    $method = ArrayHelper::getValue($classEvent, 'method');
                     $append = ArrayHelper::getValue($classEvent, 'append', true);
                 } else {
                     $name = $classEvent;
                 }
                 Event::on($class, $name, [$this, '_eventByMethod'], [
-                    'moduleConfig' => $config
+                    'moduleConfig' => $config,
+                    'method' => $method
                 ], $append);
             }
         }
@@ -465,6 +469,10 @@ class Manager extends Component implements BootstrapInterface
      */
     public static function generateMethodName($event)
     {
+        if (isset($event->data['method'])) {
+            return $event->data['method'];
+        }
+
         $reflector = new \ReflectionClass($event->sender);
         $name = $reflector->getShortName();
         return lcfirst($name) . ucfirst($event->name);
@@ -486,7 +494,7 @@ class Manager extends Component implements BootstrapInterface
             return;
         }
 
-        if (!$handler = $module->getModuleEventHandler()){
+        if (!$handler = $module->getModuleEventHandler()) {
             return;
         }
 
@@ -537,9 +545,9 @@ class Manager extends Component implements BootstrapInterface
 
 
     /** Загружает или находит существующий объект модуля
-     * если модуль не добален в приложение добавлет и возвращает его екземляр
+     * если модуль не добавлен в приложение добавляет и возвращает его экземпляр
      * @param $id
-     * @param $config
+     * @param Config|null $config
      * @param bool $bootstrap
      * @return AppModuleInterface|Module
      * @throws ModuleNotFoundException
@@ -580,14 +588,26 @@ class Manager extends Component implements BootstrapInterface
         if (version_compare($exist->version, $new->version, '>=')) {
             return true;
         }
+
+
+        $alias = dirname($this->aliasFromNameSpace($new->class));
+
+        Yii::setAlias($alias, $new->path);
         /** @var Module|AppModuleInterface $instance */
         $instance = \Yii::createObject($new->class, [$new->id, \Yii::$app]);
 
-        $this->trigger(self::EVENT_BEFORE_UPGRADE, new ModuleEvent(['module' => $instance]));
 
-        if ($instance->hasMethod('upgrade') && !$instance->upgrade()) {
+        $event = new ModuleEvent(['module' => $instance]);
+        $this->trigger(self::EVENT_BEFORE_UPGRADE, $event);
+
+
+        if ((!$event->isValid) || ($instance->hasMethod('upgrade') && !$instance->upgrade())) {
+            Yii::setAlias($alias, null);
             return false;
         }
+
+        Yii::setAlias($alias, null);
+
         FileHelper::removeDirectory($exist->path);
         rename($new->path, $exist->path);
 
@@ -605,7 +625,7 @@ class Manager extends Component implements BootstrapInterface
         return true;
     }
 
-    /**
+    /** Установка файлов модуля
      * @param string $filesPath
      * @param Config $config
      * @return $this
@@ -704,26 +724,51 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $fileName
-     * @param Config $config
+     * @param string|null $tmpPath
+     * @param array|null $moduleClassInfo
+     * @return Config|null
+     * @throws ManagerExceptionBase
+     */
+    public function readModuleZip($fileName, &$tmpPath = null, &$moduleClassInfo = null)
+    {
+        try {
+            $tmpPath = $this->getTmpPath($fileName);
+            $zip = new ZipArchive();
+            $zip->open($fileName);
+            $zip->extractTo($tmpPath);
+
+            $file = $tmpPath . DIRECTORY_SEPARATOR . 'Module.php';
+            return $this->readConfig($file, $moduleClassInfo);
+
+        } catch (\Exception $exception) {
+            throw  new ManagerExceptionBase($exception->getMessage(), $exception, $this);
+        } finally {
+            if (isset($zip)) {
+                $zip->close();
+            }
+        }
+    }
+
+
+    /**
+     * @param $fileName
+     * @param Config|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
-    public function install($fileName, &$config)
+    public function install($fileName, &$config = null)
     {
         try {
-            $tmp = $this->getTmpPath($fileName);
-            $zip = new ZipArchive();
-            $zip->open($fileName);
-            $zip->extractTo($tmp);
 
-            $file = $tmp . DIRECTORY_SEPARATOR . 'Module.php';
-
-            $config = $this->readConfig($file, $moduleClassInfo);
+            $config = $this->readModuleZip($fileName, $tmp, $moduleClassInfo);
 
             if ($c = $this->getModuleConfigById($config->uniqueId)) {
-                if ($this->upgrade($c, $config, $fileName)) {
-                    return true;
+                try {
+                    $r = $this->upgrade($c, $config, $fileName);
+                } finally {
+                    FileHelper::removeDirectory($tmp);
                 }
+                return $r;
             }
 
             if (isset($config->parentModule)) {
@@ -745,7 +790,7 @@ class Manager extends Component implements BootstrapInterface
             }
 
             $module =
-                $this->installFiles(dirname($file), $config)
+                $this->installFiles($tmp, $config)
                     ->clearCache()
                     ->loadModule($config->uniqueId, $dstConfig);
 
@@ -768,11 +813,11 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $id
-     * @param $config
+     * @param Config|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
-    public function uninstall($id, &$config)
+    public function uninstall($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
@@ -793,10 +838,10 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config $config
+     * @param Config|null $config
      * @throws ManagerExceptionBase
      */
-    public function turnOn($id, &$config)
+    public function turnOn($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
@@ -813,10 +858,10 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config $config
+     * @param Config|null $config
      * @throws ManagerExceptionBase
      */
-    public function turnOff($id, &$config)
+    public function turnOff($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
@@ -834,10 +879,10 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config $config
+     * @param Config|null $config
      * @throws ManagerExceptionBase
      */
-    public function toggle($id, &$config)
+    public function toggle($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
@@ -854,18 +899,18 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $id
-     * @param Config $config
+     * @param Config|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
-    public function reset($id, &$config)
+    public function reset($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
 
             if ($this->internalUnInstall($module, true)) {
                 $this->internalInstall($module, true);
-                $this->internalChangeState($module, $config,  ($config->enabled) ? 'turnOn' : 'turnOff');
+                $this->internalChangeState($module, $config, ($config->enabled) ? 'turnOn' : 'turnOff');
             }
             if ($this->isAutoActivate) {
                 $this->turnOn($id, $config);
@@ -885,11 +930,11 @@ class Manager extends Component implements BootstrapInterface
     /** Export module ti zip file
      * @param string $id module id
      * @param string $destinationPath destination path
-     * @param Config $config
+     * @param Config|null $config
      * @return string zip archive file name
      * @throws ManagerExceptionBase
      */
-    public function export($id, $destinationPath, &$config)
+    public function export($id, $destinationPath, &$config = null)
     {
         try {
 
