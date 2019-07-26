@@ -412,6 +412,10 @@ class Manager extends Component implements BootstrapInterface
                 continue;
             }
 
+            if (Yii::$app instanceof \yii\console\Application && !$config->enabledOnConsole) {
+                continue;
+            }
+
             /**@var  Config $config */
             if ($config->isEnabled()) {
                 $this->addModule($config);

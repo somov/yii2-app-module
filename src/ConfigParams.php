@@ -2,7 +2,6 @@
 
 namespace somov\appmodule;
 
-use Codeception\Exception\ModuleConfigException;
 use yii\base\Exception;
 use yii\base\Model;
 
@@ -30,6 +29,7 @@ use yii\base\Model;
  * @property boolean bootstrap = false
  * @property string parentModule = null
  * @property Config[] modules = []
+ * @property boolean enabledOnConsole = false
  */
 trait ConfigParams
 {
@@ -385,6 +385,22 @@ trait ConfigParams
     public function setParentModule($parentModule)
     {
         $this->setter('parentModule', $parentModule);
+    }
+
+    /**
+     * @return boolean
+     */
+    public function getEnabledOnConsole()
+    {
+        return $this->getter('console', false);
+    }
+
+    /**
+     * @param boolean $value
+     */
+    public function setEnabledOnConsole($value)
+    {
+        $this->setter('console', $value);
     }
 
     /**

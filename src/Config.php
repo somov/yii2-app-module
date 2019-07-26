@@ -14,7 +14,7 @@ use yii\helpers\ArrayHelper;
 use yii\helpers\Inflector;
 
 /**
- * Конфигурация модулей приожения
+ * Конфигурация модулей приложения
  *
  *
  * @property string class
@@ -66,7 +66,8 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
             'parentModule',
             'modules',
             'version',
-            'xhr'
+            'xhr',
+            'console',
         ];
     }
 
