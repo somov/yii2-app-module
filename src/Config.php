@@ -190,11 +190,17 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         return $instance;
     }
 
+    /**
+     * @return array
+     */
     public function getImplements()
     {
         return class_implements($this->class);
     }
 
+    /**
+     * @return bool|string
+     */
     public function getInstalledPath()
     {
         $aliases = [
@@ -211,7 +217,9 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         return \Yii::getAlias(implode(DIRECTORY_SEPARATOR, $aliases));
     }
 
-
+    /**
+     * @return bool
+     */
     public function isEnabled()
     {
         $this->_enabled = file_exists($this->getLocFile());
@@ -279,6 +287,5 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         }
         return null;
     }
-
 
 }

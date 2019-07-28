@@ -25,7 +25,7 @@ class ManagerExceptionBase extends Exception
      */
     public $config;
 
-    public function __construct($message = "",  \Throwable $previous = null, Manager $manager, $config = null)
+    public function __construct(Manager $manager, $message = "",  \Throwable $previous = null,  $config = null)
     {
         $this->manager = $manager;
 

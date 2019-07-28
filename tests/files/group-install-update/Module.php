@@ -1,24 +1,26 @@
 <?php
 
-namespace subModule;
+namespace testGroupModule;
+
 
 use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
+use testGroupModule\components\TestInterface;
 use yii\base\Event;
 use yii\base\Exception;
 
 /**
  *  module definition class
- * @method bool upgrade()
- * @method bool changedState(bool $isEnabled)
+ * @method bool changedState(bool $state)
+ * @method bool install(bool $isReset = false)
+ * @method bool uninstall(bool $isReset = false)
  */
-class Module extends \yii\base\Module implements AppModuleInterface
+class Module extends \yii\base\Module implements AppModuleInterface, TestInterface
 {
 
     public static function getAppModuleId()
     {
-        return 'submodule';
+        return 'group-install';
     }
 
     public function viewBeginPage($event)
@@ -34,21 +36,10 @@ class Module extends \yii\base\Module implements AppModuleInterface
     public static function configure(Config $config)
     {
         $config->name = 'Test';
-        $config->description = 'Test';
-        $config->version = '1.0.1';
-        $config->events = self::getEvents();
+        $config->description = 'Test description';
+        $config->version = '1.0.2';
         $config->category = 'Test';
-        $config->parentModule = \testModule\Module::getAppModuleId();
-    }
-
-    public function install()
-    {
-        return true;
-    }
-
-    public function uninstall()
-    {
-        return true;
+        $config->events = self::getEvents();
     }
 
 
@@ -60,7 +51,20 @@ class Module extends \yii\base\Module implements AppModuleInterface
     static function getEvents()
     {
         return [
+            \yii\base\Application::class => [
+                \yii\base\Application::EVENT_AFTER_REQUEST
+            ]
         ];
+    }
+
+    public function applicationAfterRequest()
+    {
+        \Yii::$app->params['test'] = $this->getTest();
+    }
+
+    public function upgrade()
+    {
+        return true;
     }
 
 
@@ -74,5 +78,11 @@ class Module extends \yii\base\Module implements AppModuleInterface
     {
         throw new Exception('111');
     }
+
+    public function getTest()
+    {
+        return 'test';
+    }
+
 
 }

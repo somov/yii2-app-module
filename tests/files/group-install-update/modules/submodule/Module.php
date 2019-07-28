@@ -1,16 +1,14 @@
 <?php
 
-namespace subModule;
+namespace testGroupModuleSubModule;
 
 use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
 use yii\base\Event;
 use yii\base\Exception;
 
 /**
  *  module definition class
- * @method bool upgrade()
  * @method bool changedState(bool $isEnabled)
  */
 class Module extends \yii\base\Module implements AppModuleInterface
@@ -35,16 +33,21 @@ class Module extends \yii\base\Module implements AppModuleInterface
     {
         $config->name = 'Test';
         $config->description = 'Test';
-        $config->version = '1.0.1';
+        $config->version = '1.0.2';
         $config->events = self::getEvents();
         $config->category = 'Test';
-        $config->parentModule = \testModule\Module::getAppModuleId();
+        $config->parentModule = \testGroupModule\Module::getAppModuleId();
     }
 
-    public function install()
+    public function install($isReset)
     {
         return true;
     }
+
+    public function upgrade(){
+        throw new \Exception('Update submodule');
+    }
+
 
     public function uninstall()
     {
@@ -74,5 +77,6 @@ class Module extends \yii\base\Module implements AppModuleInterface
     {
         throw new Exception('111');
     }
+
 
 }

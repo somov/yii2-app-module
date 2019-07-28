@@ -12,6 +12,7 @@ use somov\appmodule\Config;
 use somov\appmodule\exceptions\InvalidModuleConfiguration;
 use somov\appmodule\exceptions\ManagerExceptionBase;
 use somov\appmodule\exceptions\ModuleNotFoundException;
+use somov\appmodule\exceptions\SubModuleException;
 use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
 use somov\common\helpers\ReflectionHelper;
@@ -517,7 +518,7 @@ class Manager extends Component implements BootstrapInterface
         } catch (UnknownMethodException $exception) {
             $message = "Unknown method $method and  method handleModuleEvent in  " . get_class($handler);
             if (YII_DEBUG) {
-                throw new ManagerExceptionBase($message, $exception, $this);
+                throw new ManagerExceptionBase($this, $message, $exception);
             }
             Yii::error($message);
         } catch (\Exception $exception) {
@@ -559,7 +560,7 @@ class Manager extends Component implements BootstrapInterface
     public function loadModule($id, &$config = null, $bootstrap = false)
     {
         if (!$config = (isset($config)) ? $config : $this->getModuleConfigById($id)) {
-            throw new ModuleNotFoundException('Unknown module ' . $id, null, $this);
+            throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
         }
 
         if (!$module = $config->getModuleInstance()) {
@@ -572,7 +573,7 @@ class Manager extends Component implements BootstrapInterface
 
         if (empty($module)) {
             $id = (isset($config)) ? $config->id : $id;
-            throw new ModuleNotFoundException('Unknown module ' . $id, null, $this);
+            throw new ModuleNotFoundException($$this, 'Unknown module ' . $id, null);
         }
 
         return $module;
@@ -584,7 +585,6 @@ class Manager extends Component implements BootstrapInterface
      * @param Config $new
      * @param string $fileName
      * @return bool
-     * @throws InvalidConfigException
      * @throws \yii\base\ErrorException
      */
     protected function upgrade(Config $exist, Config $new, $fileName)
@@ -593,12 +593,11 @@ class Manager extends Component implements BootstrapInterface
             return true;
         }
 
-
         $alias = dirname($this->aliasFromNameSpace($new->class));
 
         Yii::setAlias($alias, $new->path);
         /** @var Module|AppModuleInterface $instance */
-        $instance = \Yii::createObject($new->class, [$new->id, \Yii::$app]);
+        $instance = $this->loadModule($new->uniqueId);;
 
 
         $event = new ModuleEvent(['module' => $instance]);
@@ -625,6 +624,7 @@ class Manager extends Component implements BootstrapInterface
             'oldVersion' => $exist->version,
             'fileName' => $fileName
         ]));
+
 
         return true;
     }
@@ -689,14 +689,22 @@ class Manager extends Component implements BootstrapInterface
     /**
      * @param $module \yii\base\Module|AppModuleInterface
      * @param boolean $isReset
+     * @param bool $isActivate
      * @return bool
+     * @throws ManagerExceptionBase
      */
-    protected function internalInstall($module, $isReset)
+    protected function internalInstall($module, $isReset, $isActivate = false)
     {
-        return $this->executeMethod(self::EVENT_BEFORE_INSTALL,
+        $result = $this->executeMethod(self::EVENT_BEFORE_INSTALL,
             self::EVENT_AFTER_INSTALL, $module, function () use ($module, $isReset) {
                 return ($module->hasMethod('install') ? $module->install($isReset) : true);
             });
+
+        if ($result && $isActivate) {
+            $this->turnOn($module->uniqueId);
+        }
+
+        return $result;
     }
 
     /**
@@ -733,6 +741,13 @@ class Manager extends Component implements BootstrapInterface
      * @return Config|null
      * @throws ManagerExceptionBase
      */
+    /**
+     * @param $fileName
+     * @param string|null $tmpPath
+     * @param array|null $moduleClassInfo
+     * @return Config|null
+     * @throws ManagerExceptionBase
+     */
     public function readModuleZip($fileName, &$tmpPath = null, &$moduleClassInfo = null)
     {
         try {
@@ -740,12 +755,11 @@ class Manager extends Component implements BootstrapInterface
             $zip = new ZipArchive();
             $zip->open($fileName);
             $zip->extractTo($tmpPath);
-
             $file = $tmpPath . DIRECTORY_SEPARATOR . 'Module.php';
             return $this->readConfig($file, $moduleClassInfo);
 
         } catch (\Exception $exception) {
-            throw  new ManagerExceptionBase($exception->getMessage(), $exception, $this);
+            throw  new ManagerExceptionBase($this, $exception->getMessage(), $exception);
         } finally {
             if (isset($zip)) {
                 $zip->close();
@@ -769,6 +783,23 @@ class Manager extends Component implements BootstrapInterface
             if ($c = $this->getModuleConfigById($config->uniqueId)) {
                 try {
                     $r = $this->upgrade($c, $config, $fileName);
+
+                    foreach ($c->modules as $subConfig) {
+                        try {
+                            $instance = $this->loadModule($subConfig->uniqueId);
+                            $this->executeMethod(self::EVENT_BEFORE_UPGRADE, self::EVENT_AFTER_UPGRADE,
+                                $instance, function () use ($instance) {
+                                    if ($instance->hasMethod('upgrade')) {
+                                        return $instance->upgrade();
+                                    }
+                                    return true;
+                                });
+
+                        } catch (ModuleNotFoundException $exception) {
+                            // TODO значит модуль удален ... и что с этим делать
+                            continue;
+                        }
+                    }
                 } finally {
                     FileHelper::removeDirectory($tmp);
                 }
@@ -777,13 +808,13 @@ class Manager extends Component implements BootstrapInterface
 
             if (isset($config->parentModule)) {
                 if (!$parentConfig = $this->getModuleConfigById($config->parentModule)) {
-                    throw new ModuleNotFoundException('No found parent module ' . $config->parentModule,
-                        null, $this, $config);
+                    throw new ModuleNotFoundException($this, 'No found parent module ' . $config->parentModule,
+                        null, $config);
                 };
 
                 if ($config->alias !== $parentConfig->alias) {
-                    throw new InvalidModuleConfiguration('Parent module alias not same with owner',
-                        null, $this, $config);
+                    throw new InvalidModuleConfiguration($this, 'Parent module alias not same with owner',
+                        null, $config);
                 }
 
                 $parentModule = $this->loadModule(null, $parentConfig);
@@ -792,22 +823,32 @@ class Manager extends Component implements BootstrapInterface
                         $this->getArrayApplicationParams($config), ['class' => $moduleClassInfo['class']])
                 );
             }
+            /** @var Config $dstConfig */
 
             $module =
                 $this->installFiles($tmp, $config)
                     ->clearCache()
                     ->loadModule($config->uniqueId, $dstConfig);
 
-            if ($this->internalInstall($module, false)) {
-                if ($this->isAutoActivate) {
-                    $this->turnOn(null, $dstConfig);
+            if ($this->internalInstall($module, false, $this->isAutoActivate)) {
+
+                foreach ($dstConfig->modules as $subConfig) {
+                    try {
+                        $this->internalInstall($this->loadModule($subConfig->uniqueId), false, true);
+                    } catch (\Exception $exception) {
+                        $exception = new SubModuleException($this, 'Error installed sub module ' . $subConfig->name
+                            . ' ' . $exception->getMessage(), $exception, $dstConfig);
+                        $exception->submoduleConfig = $subConfig;
+                        throw $exception;
+                    }
                 }
             }
 
             $config = $dstConfig;
+
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
@@ -825,13 +866,29 @@ class Manager extends Component implements BootstrapInterface
     {
         try {
             $module = $this->loadModule($id, $config);
+            /** @var Module $module */
+            foreach ($module->modules as $id => $sm) {
+                try {
+                    $subModule = $module->getModule($id);
+                    if ($this->internalUnInstall($subModule, false)) {
+                        FileHelper::removeDirectory($subModule->basePath);
+                    }
+                } catch (\Exception $exception) {
+                    $config = $this->getModuleConfigById($module->getUniqueId());
+                    $exception = new SubModuleException($this, 'Error Uninstalled sub module ' . $config->name
+                        . ' ' . $exception->getMessage(), $exception, $config);
+                    $exception->submoduleConfig = $config;
+                    throw $exception;
+                }
+            }
+
             if ($this->internalUnInstall($module, false)) {
                 FileHelper::removeDirectory($config->path);
             }
             $this->clearCache();
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
@@ -853,7 +910,7 @@ class Manager extends Component implements BootstrapInterface
             $this->clearCache();
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
@@ -874,7 +931,7 @@ class Manager extends Component implements BootstrapInterface
 
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
@@ -893,7 +950,7 @@ class Manager extends Component implements BootstrapInterface
             $this->internalChangeState($module, $config, 'toggle');
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
@@ -922,13 +979,24 @@ class Manager extends Component implements BootstrapInterface
             $this->clearCache();
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
         }
         return true;
 
+    }
+
+    /**
+     * @param $destinationPath
+     * @param Config $config
+     * @return string
+     */
+    private function zipFileName($destinationPath, Config $config)
+    {
+        return \Yii::getAlias($destinationPath) . DIRECTORY_SEPARATOR .
+            $config->id . "_" . $config->version . ".zip";
     }
 
     /** Export module ti zip file
@@ -943,11 +1011,10 @@ class Manager extends Component implements BootstrapInterface
         try {
 
             if (!$config = (isset($config)) ? $config : $this->getModuleConfigById($id)) {
-                throw new ModuleNotFoundException('Unknown module ' . $id, null, $this);
+                throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
             }
 
-            $fileName = \Yii::getAlias($destinationPath) . DIRECTORY_SEPARATOR .
-                $config->id . "_" . $config->version . ".zip";
+            $fileName = $this->zipFileName($destinationPath, $config);
 
             $zip = new ZipArchive();
             $zip->open($fileName, ZipArchive::CREATE | ZipArchive::OVERWRITE);
@@ -955,15 +1022,14 @@ class Manager extends Component implements BootstrapInterface
             foreach (FileHelper::findFiles($config->path, [
                 'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep']
             ]) as $file) {
-                $parts = explode('/' . $id . '/', $file);
+                $parts = explode('/' . $config->id . '/', $file);
                 $zip->addFile($file, '/' . $parts[1]);
             }
-
             $zip->close();
 
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
-                throw new ManagerExceptionBase($exception->getMessage(), $exception, $this, $config);
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
             } else {
                 throw $exception;
             }
