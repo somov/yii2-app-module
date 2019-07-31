@@ -189,7 +189,15 @@ class Manager extends Component implements BootstrapInterface
                 ]
             ]);
             $class::configure($config);
-            $config->id = $class::getAppModuleId();
+
+            $id = $class::getAppModuleId();
+
+            if (strpos($id, '/') !== false) {
+                list ($parent, $id) = explode('/', $id);
+                $config->setId($id, $parent);
+            } else {
+                $config->setId($id);
+            }
             $config->isEnabled();
             return $config;
         };
@@ -565,6 +573,10 @@ class Manager extends Component implements BootstrapInterface
 
         if (!$module = $config->getModuleInstance()) {
 
+            if ($config->parentModule && empty(Yii::$app->modules[$config->parentModule])) {
+                $this->addModule($this->getModuleConfigById($config->parentModule), $bootstrap);
+            }
+
             if (!$module = \Yii::$app->getModule($config->getUniqueId())) {
                 $this->addModule($config, $bootstrap);
                 $module = \Yii::$app->getModule($id);
@@ -573,7 +585,7 @@ class Manager extends Component implements BootstrapInterface
 
         if (empty($module)) {
             $id = (isset($config)) ? $config->id : $id;
-            throw new ModuleNotFoundException($$this, 'Unknown module ' . $id, null);
+            throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
         }
 
         return $module;

@@ -44,32 +44,6 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
     /** @var  boolean */
     private $_enabled;
 
-    protected function attributesNames()
-    {
-        return [
-            '', //empty index
-            'id',
-            'alias',
-            'type',
-            'name',
-            'settingsModel',
-            'settingsRoute',
-            'settingsView',
-            'settingsRouteIcon',
-            'description',
-            'category',
-            'author',
-            'events',
-            'urlRules',
-            'appendRoutes',
-            'bootstrap',
-            'parentModule',
-            'modules',
-            'version',
-            'xhr',
-            'console',
-        ];
-    }
 
 
     public function __construct(array $config = [])

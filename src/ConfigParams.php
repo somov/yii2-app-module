@@ -27,13 +27,46 @@ use yii\base\Model;
  * @property array urlRules = []
  * @property boolean appendRoutes = false
  * @property boolean bootstrap = false
- * @property string parentModule = null
+ * @property-read string parentModule = null
  * @property Config[] modules = []
  * @property boolean enabledOnConsole = false
  */
 trait ConfigParams
 {
+    /**
+     * @var array
+     */
     private $_cp = [];
+
+    /**
+     * @return array
+     */
+    protected function attributesNames()
+    {
+        return [
+            '', //empty index
+            'id',
+            'alias',
+            'type',
+            'name',
+            'settingsModel',
+            'settingsRoute',
+            'settingsView',
+            'settingsRouteIcon',
+            'description',
+            'category',
+            'author',
+            'events',
+            'urlRules',
+            'appendRoutes',
+            'bootstrap',
+            'parentModule',
+            'modules',
+            'version',
+            'xhr',
+            'console',
+        ];
+    }
 
     /**
      * @param $attribute
@@ -94,10 +127,15 @@ trait ConfigParams
 
     /**
      * @param string $id
+     * @param string|null $parent
      */
-    public function setId($id)
+    public function setId($id, $parent = null)
     {
         $this->setter('id', $id);
+
+        if (isset($parent)) {
+            $this->setter('parentModule', $parent);
+        }
     }
 
     /**
@@ -380,6 +418,7 @@ trait ConfigParams
     }
 
     /**
+     * @deprecated set as read only and removed at 1.0.11
      * @param string $parentModule
      */
     public function setParentModule($parentModule)

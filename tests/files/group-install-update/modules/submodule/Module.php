@@ -16,7 +16,7 @@ class Module extends \yii\base\Module implements AppModuleInterface
 
     public static function getAppModuleId()
     {
-        return 'submodule';
+        return 'group-install/submodule';
     }
 
     public function viewBeginPage($event)
@@ -36,7 +36,6 @@ class Module extends \yii\base\Module implements AppModuleInterface
         $config->version = '1.0.2';
         $config->events = self::getEvents();
         $config->category = 'Test';
-        $config->parentModule = \testGroupModule\Module::getAppModuleId();
     }
 
     public function install($isReset)
