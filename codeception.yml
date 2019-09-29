@@ -11,5 +11,5 @@ settings:
 modules:
     config:
         Yii2:
-            configFile: '../app/config/console.php'
+            configFile: 'tests/console.php'
             cleanup: false

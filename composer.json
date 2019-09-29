@@ -20,17 +20,47 @@
     "yiisoft/yii2": ">=2.0.14",
     "somov/yii2-common": ">=1.1.1"
   },
+
+  "autoload-dev": {
+    "classmap": [
+      "tests/unit/"
+    ]
+  },
+
+  "require-dev": {
+    "codeception/base": "^2.2.3",
+    "codeception/verify": "~0.3.1",
+    "codeception/specify": "~0.4.3",
+    "phpunit/phpunit": "~5"
+  },
+
+
+
   "autoload": {
     "psr-4": {
       "somov\\appmodule\\": "src"
     }
   },
+
   "archive": {
     "exclude": [
       "/.*",
       "/tests",
       "/vendor",
-      "/bin"
+      "/runtime"
     ]
+  },
+
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ],
+  "config": {
+    "process-timeout": 1800,
+    "fxp-asset": {
+      "enabled": false
+    }
   }
 }
