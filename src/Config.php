@@ -31,19 +31,30 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
 
     use ConfigParams;
 
+    /**
+     *
+     */
     const LOC_FILE = 'enabled.loc';
 
+    /**
+     * @var string
+     */
     private $_path;
 
-    /** @var  String */
+    /**
+     * @var  String
+     */
     private $_namespace;
 
-    /** @var  String */
+    /**
+     * @var  String
+     */
     private $_class;
 
-    /** @var  boolean */
+    /**
+     * @var  boolean
+     */
     private $_enabled;
-
 
 
     public function __construct(array $config = [])

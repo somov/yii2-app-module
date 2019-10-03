@@ -2,6 +2,7 @@
 
 namespace somov\appmodule;
 
+use somov\appmodule\components\AppModuleStaticEventHandler;
 use yii\base\Exception;
 use yii\base\Model;
 
@@ -14,6 +15,7 @@ use yii\base\Model;
  * @property string alias
  * @property string type
  * @property string name
+ * @property string handler
  * @property string|Model settingsModel
  * @property string settingsRoute
  * @property string settingsView
@@ -65,6 +67,7 @@ trait ConfigParams
             'version',
             'xhr',
             'console',
+            'handler'
         ];
     }
 
@@ -456,6 +459,22 @@ trait ConfigParams
     public function setModules($modules)
     {
         $this->setter('modules', $modules);
+    }
+
+    /**
+     * @param string $value
+     */
+    public function setHandler($value)
+    {
+        $this->setter('handler', $value);
+    }
+
+    /**
+     * @return string|AppModuleStaticEventHandler boolean
+     */
+    public function getHandler()
+    {
+        return $this->getter('handler', false);
     }
 
     /**

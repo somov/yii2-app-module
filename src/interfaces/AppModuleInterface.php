@@ -13,6 +13,8 @@ use somov\appmodule\Config;
 /**
  * Interface AppModuleInterface
  * @package somov\appmodule\interfaces
+ *
+ * @method object|AppModuleEventHandler|null getModuleEventHandler()
  */
 interface AppModuleInterface extends AppModuleBaseInterface
 {
@@ -26,11 +28,5 @@ interface AppModuleInterface extends AppModuleBaseInterface
      */
     public static function configure(Config $config);
 
-
-    /**
-     * Get a event handler object
-     * @return object|AppModuleEventHandler|null
-     */
-    public function getModuleEventHandler();
 
 }

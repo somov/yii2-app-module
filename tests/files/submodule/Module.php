@@ -4,7 +4,6 @@ namespace subModule;
 
 use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
 use yii\base\Event;
 use yii\base\Exception;
 

@@ -24,7 +24,6 @@ use yii\base\Event;
 use yii\base\InvalidConfigException;
 use yii\base\Module;
 use yii\base\Security;
-use yii\base\UnknownMethodException;
 use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
@@ -54,6 +53,8 @@ class Manager extends Component implements BootstrapInterface
 
     CONST EVENT_BEFORE_UPGRADE = 'beforeUpgrade';
     CONST EVENT_AFTER_UPGRADE = 'afterUpgrade';
+
+    const EVENT_ON_EXCEPTION_IN_EVENT_HANDLER = 'exceptionEventHandler';
 
     /** Turn on module after reset oo install
      * @var bool
@@ -188,7 +189,12 @@ class Manager extends Component implements BootstrapInterface
                     'path' => $path
                 ]
             ]);
+
             $class::configure($config);
+
+            if ($handler = $config->getHandler()) {
+                $config->events = $handler::getEvents();
+            }
 
             $id = $class::getAppModuleId();
 
@@ -499,6 +505,22 @@ class Manager extends Component implements BootstrapInterface
         /** @var Config $config */
         $config = $event->data['moduleConfig'];
 
+        $method = self::generateMethodName($event);
+
+        // static event handler
+        if ($handler = $config->getHandler()) {
+            if (class_exists($handler)) {
+                try {
+                    if ($handler::handleStatic($event, $method)) {
+                        return;
+                    }
+                } catch (\Exception $exception) {
+                    $this->onEventHandlerException($exception, null, $event);
+                    return;
+                }
+            }
+        }
+
         try {
             /** @var Module|AppModuleInterface $module */
             $module = $this->loadModule(null, $config);
@@ -510,31 +532,61 @@ class Manager extends Component implements BootstrapInterface
         if (!$handler = $module->getModuleEventHandler()) {
             return;
         }
-
-        $method = self::generateMethodName($event);
-
-        if ($handler instanceof AppModuleEventHandler) {
-            if ($handler->handle($event, $method)) {
-                return;
-            }
-        }
-
-        $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
-
         try {
+
+            //app module event handler
+            if ($handler instanceof AppModuleEventHandler) {
+                if ($handler->handle($event, $method)) {
+                    return;
+                }
+            }
+            // backward compatibility
+            $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
+
+            if (!method_exists($handler, $m)) {
+                throw new InvalidModuleConfiguration($this, 'Unknown handler for event ' . $event->name . ' method ' . $method . ' not found');
+            }
+
             call_user_func_array([$handler, $m], ['event' => $event]);
-        } catch (UnknownMethodException $exception) {
-            $message = "Unknown method $method and  method handleModuleEvent in  " . get_class($handler);
-            if (YII_DEBUG) {
-                throw new ManagerExceptionBase($this, $message, $exception);
-            }
-            Yii::error($message);
+
         } catch (\Exception $exception) {
-            if (YII_DEBUG) {
-                throw $exception;
-            }
-            Yii::error($exception->getMessage());
+            $this->onEventHandlerException($exception, $module, $event);
         }
+    }
+
+    /**
+     * Обработка исключений вызванных в событии модуля
+     * @param \Exception $exception
+     * @param Module $module
+     * @param Event $event
+     */
+    private function onEventHandlerException($exception, $module, $event)
+    {
+
+        if (empty($module)) {
+            /** @var Config $config */
+            if ($config = ArrayHelper::getValue($event, 'data.moduleConfig')) {
+                try {
+                    $module = $this->loadModule($config->id, $config, true);
+                } catch (ModuleNotFoundException $exception) {
+                }
+            }
+        }
+
+        $event = new ModuleExceptionEvent(['module' => $module, 'exception' => $exception]);
+
+        $this->trigger(self::EVENT_ON_EXCEPTION_IN_EVENT_HANDLER, $event);
+
+        if ($event->isValid) {
+            return;
+        }
+
+        Yii::error($exception->getMessage(), __CLASS__);
+
+        if (YII_DEBUG) {
+            throw  $exception;
+        }
+
     }
 
 
@@ -808,7 +860,7 @@ class Manager extends Component implements BootstrapInterface
                                 });
 
                         } catch (ModuleNotFoundException $exception) {
-                            // TODO значит модуль удален ... и что с этим делать
+                            Yii::warning($exception->getMessage());
                             continue;
                         }
                     }
