@@ -24,6 +24,7 @@ use yii\base\Event;
 use yii\base\InvalidConfigException;
 use yii\base\Module;
 use yii\base\Security;
+use yii\base\UnknownMethodException;
 use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
@@ -391,14 +392,16 @@ class Manager extends Component implements BootstrapInterface
 
             $this->setModuleAlias($config);
 
-            if (!empty($config->urlRules)) {
-                \Yii::$app->urlManager->addRules($config->urlRules, $config->appendRoutes);
-            }
+            if ($config->enabled) {
+                if (!empty($config->urlRules)) {
+                    \Yii::$app->urlManager->addRules($config->urlRules, $config->appendRoutes);
+                }
 
-            if ($bootstrap && $config->bootstrap) {
-                $module = $this->loadModule(null, $config);
-                if ($module instanceof BootstrapInterface) {
-                    $module->bootstrap(\Yii::$app);
+                if ($bootstrap && $config->bootstrap) {
+                    $module = $this->loadModule(null, $config);
+                    if ($module instanceof BootstrapInterface) {
+                        $module->bootstrap(\Yii::$app);
+                    }
                 }
             }
         }
@@ -411,7 +414,7 @@ class Manager extends Component implements BootstrapInterface
     protected function setModuleAlias(Config $config)
     {
         if ($config->nameSpace !== ($this->baseNameSpace . '\\' . $config->id)) {
-            \Yii::setAlias($config->nameSpace, $config->path);
+            \Yii::setAlias(str_replace('\\', '/', $config->nameSpace), $config->path);
         }
     }
 
@@ -514,6 +517,9 @@ class Manager extends Component implements BootstrapInterface
                     if ($handler::handleStatic($event, $method)) {
                         return;
                     }
+
+                    throw new UnknownMethodException($method . ' not found in ' . $handler);
+
                 } catch (\Exception $exception) {
                     $this->onEventHandlerException($exception, null, $event);
                     return;
@@ -606,6 +612,16 @@ class Manager extends Component implements BootstrapInterface
         }
 
         return $path;
+    }
+
+    /**
+     * @param AppModuleInterface|string $class
+     * @param bool $bootstrap
+     * @return AppModuleInterface|Module
+     */
+    public function load($class, $bootstrap = false)
+    {
+        return $this->loadModule($class::getAppModuleId(), $config, $bootstrap);
     }
 
 
@@ -867,6 +883,8 @@ class Manager extends Component implements BootstrapInterface
                 } finally {
                     FileHelper::removeDirectory($tmp);
                 }
+
+                $config = $c;
                 return $r;
             }
 
@@ -948,6 +966,8 @@ class Manager extends Component implements BootstrapInterface
 
             if ($this->internalUnInstall($module, false)) {
                 FileHelper::removeDirectory($config->path);
+            } else {
+                return false;
             }
             $this->clearCache();
         } catch (\Exception $exception) {
