@@ -27,7 +27,10 @@ abstract class AppModuleStaticEventHandler implements AppModuleEventHandler
     public static function handleStatic(Event $event, $method)
     {
         if (method_exists(static::class, $method)) {
-            call_user_func([static::class, $method], $event);
+            $result = call_user_func([static::class, $method], $event);
+            if (is_bool($result)) {
+                return $result;
+            }
             return true;
         }
         return false;

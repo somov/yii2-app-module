@@ -4,6 +4,7 @@
 namespace somov\appmodule;
 
 
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
 use yii\base\BaseObject;
 use yii\base\InvalidConfigException;
@@ -66,6 +67,24 @@ class Config extends BaseObject implements \Serializable, \ArrayAccess
         foreach ($runtime as $key => $value) {
             $this->{'_' . $key} = $value;
         }
+    }
+
+    /**
+     * @var array
+     */
+    private $_hI;
+
+    /**
+     * @param string $class
+     * @return AppModuleEventHandler|object
+     */
+    public function eventHandlerInstance($class)
+    {
+        if (isset($this->_hI[$class])){
+            return $this->_hI[$class];
+        }
+        $this->_hI[$class] = \Yii::createObject($class);
+        return $this->_hI[$class];
     }
 
     public function serialize()

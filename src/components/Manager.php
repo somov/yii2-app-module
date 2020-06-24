@@ -24,7 +24,6 @@ use yii\base\Event;
 use yii\base\InvalidConfigException;
 use yii\base\Module;
 use yii\base\Security;
-use yii\base\UnknownMethodException;
 use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
@@ -193,8 +192,10 @@ class Manager extends Component implements BootstrapInterface
 
             $class::configure($config);
 
-            if ($handler = $config->getHandler()) {
-                $config->events = $handler::getEvents();
+            if ($handlers = $config->getHandler()) {
+                foreach ((array)$handlers as $handler) {
+                    $config->setEvents($handler::getEvents());
+                }
             }
 
             $id = $class::getAppModuleId();
@@ -510,22 +511,34 @@ class Manager extends Component implements BootstrapInterface
 
         $method = self::generateMethodName($event);
 
-        // static event handler
-        if ($handler = $config->getHandler()) {
-            if (class_exists($handler)) {
-                try {
-                    if ($handler::handleStatic($event, $method)) {
+        if ($handlers = $config->getHandler()) {
+            /** @var AppModuleEventHandler $handler */
+            foreach ((array)$handlers as $handler) {
+                if (class_exists($handler)) {
+                    try {
+                        if (is_subclass_of($handler, AppModuleStaticEventHandler::class)) {
+                            /** @var AppModuleStaticEventHandler $handler */
+                            if ($handler::handleStatic($event, $method)) {
+                                return;
+                            }
+                        } else {
+
+                            $handler = $config->eventHandlerInstance($handler);
+                            if ($handler->handle($event, $method)) {
+                                return;
+                            }
+                        }
+
+                    } catch (\Exception $exception) {
+                        $this->onEventHandlerException($exception, null, $event);
                         return;
                     }
-
-                    throw new UnknownMethodException($method . ' not found in ' . $handler);
-
-                } catch (\Exception $exception) {
-                    $this->onEventHandlerException($exception, null, $event);
-                    return;
                 }
             }
         }
+
+
+        //old
 
         try {
             /** @var Module|AppModuleInterface $module */
@@ -535,9 +548,14 @@ class Manager extends Component implements BootstrapInterface
             return;
         }
 
-        if (!$handler = $module->getModuleEventHandler()) {
-            return;
+        $handler = null;
+
+        if (method_exists($module, 'getModuleEventHandler')) {
+            if (!$handler = $module->getModuleEventHandler()) {
+                return;
+            }
         }
+
         try {
 
             //app module event handler
@@ -550,7 +568,8 @@ class Manager extends Component implements BootstrapInterface
             $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
 
             if (!method_exists($handler, $m)) {
-                throw new InvalidModuleConfiguration($this, 'Unknown handler for event ' . $event->name . ' method ' . $method . ' not found');
+                throw new InvalidModuleConfiguration($this, 'Unknown handler for event ' . $event->name . ' method ' . $method .
+                    ' not found in ' . $config->getUniqueId());
             }
 
             call_user_func_array([$handler, $m], ['event' => $event]);
@@ -1104,7 +1123,7 @@ class Manager extends Component implements BootstrapInterface
             $zip->open($fileName, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
             foreach (FileHelper::findFiles($config->path, [
-                'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep']
+                'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep', '/runtime']
             ]) as $file) {
                 $parts = explode('/' . $config->id . '/', $file);
                 $zip->addFile($file, '/' . $parts[1]);

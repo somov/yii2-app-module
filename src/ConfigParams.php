@@ -2,7 +2,7 @@
 
 namespace somov\appmodule;
 
-use somov\appmodule\components\AppModuleStaticEventHandler;
+use somov\common\helpers\ArrayHelper;
 use yii\base\Exception;
 use yii\base\Model;
 
@@ -15,7 +15,7 @@ use yii\base\Model;
  * @property string alias
  * @property string type
  * @property string name
- * @property string handler
+ * @property string|string[]|array handler
  * @property string|Model settingsModel
  * @property string settingsRoute
  * @property string settingsView
@@ -105,11 +105,17 @@ trait ConfigParams
         $this->_cp[$this->getAid($attribute)] = $value;
     }
 
+    /**
+     * @return array
+     */
     public function getParams()
     {
         return $this->_cp;
     }
 
+    /**
+     * @param $params
+     */
     protected function setParams($params)
     {
         $this->_cp = $params;
@@ -347,6 +353,9 @@ trait ConfigParams
      */
     public function setEvents($events)
     {
+        if ($e = $this->getEvents()) {
+            $events = ArrayHelper::merge($events, $e);
+        }
         $this->setter('events', $events);
     }
 
@@ -462,7 +471,7 @@ trait ConfigParams
     }
 
     /**
-     * @param string $value
+     * @param mixed $value
      */
     public function setHandler($value)
     {
@@ -470,7 +479,7 @@ trait ConfigParams
     }
 
     /**
-     * @return string|AppModuleStaticEventHandler boolean
+     * @return string|string[]|array boolean
      */
     public function getHandler()
     {
