@@ -367,16 +367,16 @@ class Manager extends Component implements BootstrapInterface
 
 
     /**Параметры конфигурации приложения
-     * @param Config $c
+     * @param Config $config
      * @return array
      * @recursive
      */
-    protected function getArrayApplicationParams(Config $c)
+    protected function getArrayApplicationParams(Config $config)
     {
         return [
-            'class' => $c->class,
-            'version' => $c->version,
-            'modules' => array_map([$this, 'getArrayApplicationParams'], $c->modules)
+            'class' => $config->getClass(),
+            'version' => $config->getVersion(),
+            'modules' => array_map([$this, 'getArrayApplicationParams'], $config->getModules()),
         ];
     }
 
@@ -930,6 +930,14 @@ class Manager extends Component implements BootstrapInterface
                 $this->installFiles($tmp, $config)
                     ->clearCache()
                     ->loadModule($config->uniqueId, $dstConfig);
+
+            /** @var string  check module base path, after reading zip archive $path */
+            $path = $config->getInstalledPath();
+            if ($module->getBasePath() !== $path) {
+                $module->setBasePath($path);
+                //call init to re init defaults
+                $module->init();
+            }
 
             if ($this->internalInstall($module, false, $this->isAutoActivate)) {
 
