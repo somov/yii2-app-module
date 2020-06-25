@@ -747,11 +747,12 @@ class Manager extends Component implements BootstrapInterface
      * @param string $eventAfter
      * @param Module|AppModuleInterface $module
      * @param \Closure $callback
+     * @param boolean $isReset
      * @return bool
      */
-    private function executeMethod($eventBefore, $eventAfter, $module, \Closure $callback)
+    private function executeMethod($eventBefore, $eventAfter, $module, \Closure $callback, $isReset = false)
     {
-        $event = new ModuleEvent(['module' => $module]);
+        $event = new ModuleEvent(['module' => $module, 'isReset' => $isReset]);
 
         if (isset($eventBefore)) {
             $this->trigger($eventBefore, $event);
@@ -782,7 +783,7 @@ class Manager extends Component implements BootstrapInterface
         return $this->executeMethod(self::EVENT_BEFORE_UNINSTALL,
             self::EVENT_AFTER_UNINSTALL, $module, function () use ($module, $isReset) {
                 return ($module->hasMethod('uninstall') ? $module->uninstall($isReset) : true);
-            });
+            }, $isReset);
     }
 
     /**
@@ -797,7 +798,7 @@ class Manager extends Component implements BootstrapInterface
         $result = $this->executeMethod(self::EVENT_BEFORE_INSTALL,
             self::EVENT_AFTER_INSTALL, $module, function () use ($module, $isReset) {
                 return ($module->hasMethod('install') ? $module->install($isReset) : true);
-            });
+            }, $isReset);
 
         if ($result && $isActivate) {
             $this->turnOn($module->uniqueId);

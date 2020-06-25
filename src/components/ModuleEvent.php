@@ -27,6 +27,11 @@ class ModuleEvent extends Event
      */
     public $isValid = true;
 
+    /**
+     * @var bool
+     */
+    public $isReset = false;
+
 
 
 }
