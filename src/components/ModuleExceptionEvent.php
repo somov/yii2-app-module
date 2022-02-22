@@ -8,7 +8,6 @@
 
 namespace somov\appmodule\components;
 
-use yii\base\Event;
 use yii\base\Exception;
 
 /**
@@ -21,12 +20,7 @@ class ModuleExceptionEvent extends ModuleEvent
      * @var Exception
      */
     public $exception;
-
-    /**
-     * @var Event
-     */
-    public $event;
-
+    
     /**
      * @var bool
      */

@@ -2,16 +2,19 @@
 
 namespace app\modules\namespaceapp;
 
-use somov\appmodule\Config;
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\appmodule\interfaces\EventHandlerInterface;
+use somov\appmodule\interfaces\ConfigInterface;
 use yii\base\Event;
-use yii\base\Exception;
 
 /**
  *  module definition class
+ * @method bool upgrade()
+ * @method bool changedState(bool $isEnabled)
+ * @method boolean handle (Event $event, string $method)
+ * @method Boolean isHandlerValid()
  */
-class Module extends \yii\base\Module implements AppModuleInterface
+class Module extends \yii\base\Module implements AppModuleInterface, AppModuleEventHandler
 {
 
 
@@ -28,9 +31,9 @@ class Module extends \yii\base\Module implements AppModuleInterface
     }
 
     /**
-     * @inheritdoc
+     * @param ConfigInterface|\ExtendConfigInterface $config
      */
-    public static function configure(Config $config)
+    public static function configure(ConfigInterface $config)
     {
         $config->name = 'Test';
         $config->description = 'Test';
@@ -50,34 +53,18 @@ class Module extends \yii\base\Module implements AppModuleInterface
         return true;
     }
 
-    /**@return EventHandlerInterface */
-    public function getModuleEventHandler()
-    {
-        return $this;
-    }
-
 
     public function applicationAfterRequest()
     {
         \Yii::$app->response->data = $this->id;
     }
 
-
     /**
-     * @param Event $event
-     * @param \yii\base\Module $module
-     * @return void
-     * @throws Exception
+     * @return array
      */
-    public function handleModuleEvent($event, $module)
+    public static function getEvents()
     {
-
+        return [];
     }
-
-    public function getTest()
-    {
-
-    }
-
 
 }

@@ -1,10 +1,12 @@
 <?php
 
-namespace staticHandler;
+namespace moduleHandler;
 
 use mtest\common\TestComponent;
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
 use somov\appmodule\interfaces\ConfigInterface;
+use yii\base\Event;
 
 /**
  * Created by PhpStorm.
@@ -18,28 +20,52 @@ use somov\appmodule\interfaces\ConfigInterface;
  * @method bool uninstall(bool $isReset = false)
  * @method bool changedState(bool $isEnabled)
  * @method null getModuleEventHandler()
+ * @method boolean isHandlerValid()
  */
-class Module extends \yii\base\Module implements AppModuleInterface
+class Module extends \yii\base\Module implements AppModuleInterface, AppModuleEventHandler
 {
 
     const EVENT_INIT = 'init';
+
 
     /**
      * @return string
      */
     public static function getAppModuleId()
     {
-        return 'static-handler';
+        return 'module-handler';
     }
+
+    /**
+     * @return array
+     */
+    public static function getEvents()
+    {
+        return [
+            TestComponent::class => [
+                [
+                    'name' => TestComponent::EVENT_INIT,
+                ]
+            ]
+        ];
+    }
+
 
     /**
      * @param ConfigInterface|\ExtendConfigInterface $config
      */
     public static function configure(ConfigInterface $config)
     {
-        $config->name = 'static-handler-test';
-        $config->handler = TestHandler::class;
+        $config->name = 'module-handler-test';
+    }
 
+    /**
+     * @param Event $event
+     * @param string $method
+     * @return bool|void
+     */
+    public function handle(Event $event, $method){
+        $event->sender->testProperty = time();
     }
 
     /**
@@ -49,6 +75,8 @@ class Module extends \yii\base\Module implements AppModuleInterface
     {
         return new TestComponent();
     }
+
+
 
 
 }

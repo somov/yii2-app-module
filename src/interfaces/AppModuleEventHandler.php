@@ -8,7 +8,7 @@
 
 namespace somov\appmodule\interfaces;
 
-
+use yii\base\Application;
 use yii\base\Event;
 
 /**
@@ -16,6 +16,7 @@ use yii\base\Event;
  * @package somov\appmodule\interfaces
  *
  * @method boolean handle (Event $event, string $method)
+ * @method static boolean isHandlerValid(Application $app, ConfigInterface $config)
  */
 interface AppModuleEventHandler
 {

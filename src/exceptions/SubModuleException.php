@@ -9,12 +9,12 @@
 namespace somov\appmodule\exceptions;
 
 
-use somov\appmodule\Config;
+use somov\appmodule\interfaces\ConfigInterface;
 
 class SubModuleException extends ManagerExceptionBase
 {
     /**
-     * @var Config
+     * @var ConfigInterface
      */
     public $submoduleConfig;
 }

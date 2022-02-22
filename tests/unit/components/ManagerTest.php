@@ -13,47 +13,21 @@ use somov\appmodule\components\Manager;
 use somov\appmodule\exceptions\ModuleNotFoundException;
 use testModule\components\TestInterface;
 use yii\base\Application;
-use yii\caching\ExpressionDependency;
-use yii\caching\FileCache;
-use yii\helpers\FileHelper;
-use ZipArchive;
 
 class ManagerTest extends Test
 {
 
-    /** @var  Manager */
-    private $manager;
+    use ManagerTrait;
+
 
     const test_module_id = 'test-module';
 
-
-    protected function assertConfig($config)
-    {
-        foreach (['id', 'path', 'enabled', 'class', 'events', 'enabled'] as $key) {
-            $this->assertArrayHasKey($key, $config);
-        }
-    }
-
-    private function cleare()
-    {
-
-        $path = \Yii::getAlias('@app/modules/');
-
-        if (file_exists($path)) {
-            FileHelper::removeDirectory($path);
-        }
-
-        if (!file_exists($path)) {
-            FileHelper::createDirectory($path);
-        }
-    }
-
     public function testAppNmInstall()
     {
-        $this->cleare();
-        $zip = $this->createZipTestModule('', 'namespaceapp');
-
-        $this->assertTrue($this->manager->install($zip, $config));
+        $this->clear();
+        $zip = $this->createZipTestModule('namespaceapp');
+        $r=  $this->manager->unzipAndProcess($zip, $config);
+        $this->assertTrue($r);;
     }
 
     /**
@@ -61,15 +35,17 @@ class ManagerTest extends Test
      */
     public function testInstall()
     {
-        $this->cleare();
+        $this->clear();
 
-        $zip = $this->createZipTestModule();
-        $r = $this->manager->install($zip, $config);
+        $zip = $this->createZipTestModule(self::test_module_id);
+
+        $r = $this->manager->unzipAndProcess($zip, $config);
         $this->assertTrue($r);
 
         $module = \testModule\Module::getInstance();
-        $config = $this->manager->getModuleConfigById($module->id);
 
+        /** @var \ExtendConfigInterface $config */
+        $config = $this->manager->getModuleConfigById($module->id);
         $config->type = 'eee';
         $test = $config['type'];
         $this->assertSame('eee', $test);
@@ -118,7 +94,6 @@ class ManagerTest extends Test
     {
 
         $config = $this->manager->getFilteredClassesList([
-            'category' => 'Test',
             'implements' => [TestInterface::class]
         ]);
 
@@ -131,13 +106,13 @@ class ManagerTest extends Test
 
     public function testSubModuleInstall()
     {
-        $this->cleare();
+        $this->clear();
 
-        $zip = $this->createZipTestModule('', 'test-module');
-        $this->manager->install($zip, $config);
+        $zip = $this->createZipTestModule(self::test_module_id);
+        $this->manager->unzipAndProcess($zip, $config);
 
-        $zip = $this->createZipTestModule('', 'submodule');
-        $this->manager->install($zip, $config);
+        $zip = $this->createZipTestModule('submodule');
+        $this->manager->unzipAndProcess($zip, $config);
 
         $module = $this->manager->loadModule('test-module/submodule');
 
@@ -148,11 +123,14 @@ class ManagerTest extends Test
     public function testUpgrade()
     {
         $v = null;
-        $zip = $this->createZipTestModule('update' . DIRECTORY_SEPARATOR);
+
+        $zip = $this->createZipTestModule('update' );
+
         $this->manager->on(Manager::EVENT_AFTER_UPGRADE, function ($event) use (&$v) {
             $v = $event->newVersion;
         });
-        $r = $this->manager->install($zip, $config);
+
+        $r = $this->manager->unzipAndProcess($zip, $config);
         $this->assertSame('9.9.9', $v);
         $this->assertTrue($r);
     }
@@ -160,9 +138,9 @@ class ManagerTest extends Test
 
     public function testExportImport()
     {
-        $zip = $this->manager->export(self::test_module_id, '@ext/_output', $config);
+        $zip = $this->manager->export(self::test_module_id, '@ext/_output', true,  $config);
         $this->manager->uninstall(self::test_module_id, $config);
-        $r = $this->manager->install($zip, $config);
+        $r = $this->manager->unzipAndProcess($zip, $config);
         $this->assertTrue($r);
     }
 
@@ -176,55 +154,4 @@ class ManagerTest extends Test
     }
 
 
-    protected function setUp()
-    {
-        $this->manager = \Yii::createObject([
-                'class' => Manager::class,
-                'isAutoActivate' => true,
-                'cacheConfig' => [
-                    'class' => FileCache::class,
-                ],
-
-                'cacheVariations' => [
-                    'uk',
-                    'en'
-                ],
-                'cacheCurrentVariation' => 'en',
-                'cacheDependencyConfig' => [
-                    'class' => ExpressionDependency::class,
-                    'params' => ['lang' => \Yii::$app->language],
-                    'expression' => '$this->params["lang"] === \Yii::$app->language'
-                ]
-            ]
-        );
-        $this->manager->clearCache();
-
-        parent::setUp();
-    }
-
-    /**
-     * @param string $path
-     * @param string $id
-     * @return string zip file name
-     */
-    private function createZipTestModule($path = '', $id = self::test_module_id)
-    {
-        $path = '@ext/files/' . $path . $id;
-
-        $zip = new ZipArchive();
-        $zip->open(\Yii::getAlias($path . '/../' . $id . '.zip'), ZipArchive::CREATE | ZipArchive::OVERWRITE);
-
-        foreach (FileHelper::findFiles(\Yii::getAlias($path), [
-            'only' => ['pattern' => '*.*']
-        ]) as $file) {
-            $parts = explode('/' . $id . '/', $file);
-            $zip->addFile($file, '/' . $parts[1]);
-        }
-        $file = $zip->filename;
-        $zip->close();
-
-        return $file;
-
-
-    }
 }

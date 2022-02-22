@@ -8,13 +8,9 @@
 namespace somov\appmodule\interfaces;
 
 
-use somov\appmodule\Config;
-
 /**
  * Interface AppModuleInterface
  * @package somov\appmodule\interfaces
- *
- * @method object|AppModuleEventHandler|null getModuleEventHandler()
  */
 interface AppModuleInterface extends AppModuleBaseInterface
 {
@@ -24,9 +20,9 @@ interface AppModuleInterface extends AppModuleBaseInterface
     public static function getAppModuleId();
 
     /**
-     * @param Config $config
+     * @param ConfigInterface $config
      */
-    public static function configure(Config $config);
+    public static function configure(ConfigInterface $config);
 
 
 }

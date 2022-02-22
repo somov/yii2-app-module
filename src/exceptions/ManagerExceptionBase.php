@@ -10,7 +10,7 @@ namespace somov\appmodule\exceptions;
 
 
 use somov\appmodule\components\Manager;
-use somov\appmodule\Config;
+use somov\appmodule\interfaces\ConfigInterface;
 use yii\base\Exception;
 
 class ManagerExceptionBase extends Exception
@@ -21,7 +21,7 @@ class ManagerExceptionBase extends Exception
     public $manager;
 
     /**
-     * @var Config
+     * @var ConfigInterface
      */
     public $config;
 
@@ -37,7 +37,7 @@ class ManagerExceptionBase extends Exception
 
     public function getName()
     {
-        $name = (isset($this->config)) ? $this->config->name : '';
+        $name = (isset($this->config)) ? $this->config->uniqueId : '';
         return 'Module Exception ' . $name;
     }
 }

@@ -27,7 +27,9 @@ class ManagerSubmodulesTest extends Test
 
         $this->expectExceptionMessage('Install submodule');
 
-        $this->assertTrue($this->manager->install($file, $c));
+        $r = $this->manager->unzipAndProcess($file, $c);
+
+        $this->assertTrue($r);
 
 
     }
@@ -35,7 +37,7 @@ class ManagerSubmodulesTest extends Test
     public function testUpdate(){
         $file = $this->createZipTestModule('group-install-update');
         $this->expectExceptionMessage('Update submodule');
-        $this->assertTrue($this->manager->install($file, $c));
+        $this->assertTrue($this->manager->unzipAndProcess($file, $c));
     }
 
 

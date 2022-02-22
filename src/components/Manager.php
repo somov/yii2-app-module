@@ -1,34 +1,36 @@
 <?php
 /**
  *
- * User: develop
- * Date: 03.10.2017
+ * User: somov.nn
+ *
+ *
  */
 
 namespace somov\appmodule\components;
 
 
-use somov\appmodule\Config;
+use somov\appmodule\exceptions\InstallationDirectoryExistsException;
 use somov\appmodule\exceptions\InvalidModuleConfiguration;
 use somov\appmodule\exceptions\ManagerExceptionBase;
 use somov\appmodule\exceptions\ModuleNotFoundException;
 use somov\appmodule\exceptions\SubModuleException;
 use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
-use somov\common\helpers\ReflectionHelper;
+use somov\appmodule\interfaces\ConfigInterface;
+use somov\appmodule\interfaces\ManagerConfigResolver;
 use somov\common\traits\ContainerCompositions;
 use Yii;
+use yii\base\Application;
 use yii\base\BootstrapInterface;
 use yii\base\Component;
 use yii\base\Event;
 use yii\base\InvalidConfigException;
 use yii\base\Module;
-use yii\base\Security;
 use yii\caching\Cache;
 use yii\caching\Dependency;
 use yii\helpers\ArrayHelper;
 use yii\helpers\FileHelper;
-use yii\web\Application;
+use yii\helpers\StringHelper;
 use ZipArchive;
 
 
@@ -37,10 +39,16 @@ use ZipArchive;
  * @package app\components
  *
  * @property Cache $cache
+ * @property string|array|ManagerConfigResolver configResolver
+ * @property-read Application $app
  */
 class Manager extends Component implements BootstrapInterface
 {
     use ContainerCompositions;
+
+    CONST EVENT_LOAD = 'load';
+
+    CONST EVENT_HANDLERS_DEBUG = 'handled';
 
     CONST EVENT_BEFORE_INSTALL = 'beforeInstall';
     CONST EVENT_AFTER_INSTALL = 'afterInstall';
@@ -54,17 +62,42 @@ class Manager extends Component implements BootstrapInterface
     CONST EVENT_BEFORE_UPGRADE = 'beforeUpgrade';
     CONST EVENT_AFTER_UPGRADE = 'afterUpgrade';
 
+    CONST EVENT_UNZIP = 'unzip';
+    CONST EVENT_UNZIPPED = 'unzipped';
+
+    CONST EVENT_FILTER = 'filter';
+
     const EVENT_ON_EXCEPTION_IN_EVENT_HANDLER = 'exceptionEventHandler';
+
+    const DEFAULT_RESOLVER = 'somov\appmodule\components\ConfigInitializerLocFile';
 
     /** Turn on module after reset oo install
      * @var bool
      */
     public $isAutoActivate = false;
 
-    public $places = [
-        'modules' => '@app/modules'
+    /**
+     * @var string|array|ManagerConfigResolver
+     */
+    private $_configResolver;
+
+    /**
+     * @var string|array|ManagerConfigResolver
+     */
+    protected $defaultConfigResolver;
+
+    /**
+     * @var array
+     */
+    public $configOptions = [
+        'class' => 'somov\appmodule\components\ConfigLocFile'
     ];
 
+    /**
+     * If module stored at this base namespace. Manager will not added namespace from configuration
+     * @see setModuleAlias
+     * @var string
+     */
     public $baseNameSpace = 'app\modules';
 
     /**
@@ -89,15 +122,127 @@ class Manager extends Component implements BootstrapInterface
     protected $cacheVariations = [];
 
     /**
+     * @var array
+     */
+    public $places = [
+        ConfigBase::DEFAULT_TYPE => '@app/modules',
+    ];
+
+    /**
+     * @var Application
+     */
+    protected $application;
+
+    /**
+     * @var boolean Manager will add a module configuration in controller action is ready.
+     * If context is valid.
+     */
+    public $useDelayedInitialization = true;
+
+
+    /**
+     * @return Application
+     */
+    public function getApp()
+    {
+        return $this->application;
+    }
+
+
+    /**
      * Bootstrap method to be called during application bootstrap stage.
      * @param \yii\base\Application $app the application currently running
      */
     public function bootstrap($app)
     {
-        $this->addAppModulesToApplication();
-        $this->registerEvents();
+        $this->application = $app;
+        Yii::beginProfile('Bootstrap', static::class);
+
+        $list = $this->getModulesClassesList();
+
+        foreach ($list as $config) {
+            $this->setModuleAlias($config);
+            foreach ($config->modules as $SubConfig) {
+                $this->setModuleAlias($SubConfig);
+            }
+        }
+
+        if ($this->useDelayedInitialization) {
+            Yii::createObject([
+                'class' => DelayedInitiator::class,
+                'processorHandlers' => function (ConfigInterface $config, array $handlers) {
+                    $this->addEventsToApp($config, null, $handlers);
+                },
+                'processorModules' => function (array $configs, DelayedInitiator $initiator) {
+                    $this->addModulesToApp($configs, $initiator);
+                },
+                'complete' => function () {
+                    Yii::endProfile('Bootstrap', static::class);
+                }
+            ], [$this->app])->initialize($list);
+        } else {
+            $this->addModulesToApp($list);
+            Yii::endProfile('Bootstrap', static::class);
+        }
+
     }
 
+
+    /**
+     * @param ConfigInterface[] $configs
+     * @param DelayedInitiator $collectorDelayedItems
+     * @throws InvalidConfigException
+     * @throws ModuleNotFoundException
+     */
+    protected function addModulesToApp(array $configs, $collectorDelayedItems = null)
+    {
+        $hasFilterHandler = $this->hasEventHandlers(self::EVENT_FILTER);
+
+        foreach ($configs as $config) {
+            if ($config->isEnabled()) {
+                $isValid = true;
+                if ($hasFilterHandler) {
+                    $event = new ModuleEvent(['config' => $config]);
+                    $this->trigger(self::EVENT_FILTER, $event);
+                    $isValid = $event->isValid;
+                }
+                if ($isValid) {
+                    $this->addModule($config, true, $collectorDelayedItems);
+                } else {
+                    $collectorDelayedItems->addConfig($config);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array|ManagerConfigResolver|string
+     */
+    public function getConfigResolver()
+    {
+        return isset($this->_configResolver) ? $this->_configResolver : self::DEFAULT_RESOLVER;
+    }
+
+    /**
+     * @param array|ManagerConfigResolver|string $configResolver
+     */
+    public function setConfigResolver($configResolver)
+    {
+        $this->_configResolver = $configResolver;
+    }
+
+    /**
+     * Revert to 'somov\appmodule\components\ConfigInitializerLocFile'
+     * @return $this
+     */
+    public function resetToDefaultResolver()
+    {
+        $this->setConfigResolver(
+            isset($this->defaultConfigResolver) ? $this->defaultConfigResolver : self::DEFAULT_RESOLVER
+        );
+        $this->clearCache();
+        return $this;
+    }
 
     /**
      * @return \yii\caching\CacheInterface|object
@@ -105,7 +250,7 @@ class Manager extends Component implements BootstrapInterface
     protected function getCache()
     {
         if (is_string($this->cacheConfig)) {
-            return \Yii::$app->{$this->cacheConfig};
+            return $this->application->{$this->cacheConfig};
         }
         return $this->getCompositionYii($this->cacheConfig);
     }
@@ -120,20 +265,6 @@ class Manager extends Component implements BootstrapInterface
         return array_merge([__CLASS__], (array)$variation);
     }
 
-    /**
-     * @return $this
-     */
-    public function clearCache()
-    {
-        if (empty($this->cacheVariations)) {
-            $this->getCache()->offsetUnset($this->getCacheKey());;
-            return $this;
-        }
-        foreach ($this->cacheVariations as $variation) {
-            $this->getCache()->offsetUnset($this->getCacheKey($variation));
-        }
-        return $this;
-    }
 
     /**
      * @param string|callable $value
@@ -171,157 +302,49 @@ class Manager extends Component implements BootstrapInterface
         return $this->cacheDependencyConfig;
     }
 
-
     /**
-     * @param string|AppModuleInterface $class
-     * @param $namespace
-     * @param $path
-     * @return Config|null
+     * @var ConfigInterface[]
      */
-    protected function createConfig($class, $namespace, $path)
-    {
-        if (in_array(AppModuleInterface::class, class_implements($class))) {
-
-            $config = new Config([
-                'runtime' => [
-                    'namespace' => $namespace,
-                    'class' => $class,
-                    'path' => $path
-                ]
-            ]);
-
-            $class::configure($config);
-
-            if ($handlers = $config->getHandler()) {
-                foreach ((array)$handlers as $handler) {
-                    $config->setEvents($handler::getEvents());
-                }
-            }
-
-            $id = $class::getAppModuleId();
-
-            if (strpos($id, '/') !== false) {
-                list ($parent, $id) = explode('/', $id);
-                $config->setId($id, $parent);
-            } else {
-                $config->setId($id);
-            }
-            $config->isEnabled();
-            return $config;
-        };
-
-        return null;
-    }
-
-    /**
-     * Созает копию класса модуля загружает и читает конфигурацию
-     * @param $file
-     * @param array $info оригинальная информация о классе модуля
-     * @return null|Config
-     */
-    private function readConfig($file, &$info)
-    {
-        ReflectionHelper::initClassInfo($file, $info);
-
-        $path = dirname($file);
-
-
-        $suffix = ucfirst(strtr((new Security())->generateRandomString(10), ['_' => '', '-' => '']));
-        $class = 'ReadModule' . $suffix;
-
-        $content = preg_replace('/class\s*(Module)\s*extends/',
-            'class ' . $class . ' extends', file_get_contents($file));
-
-        $alias = $this->aliasFromNameSpace($info['namespace']);
-
-        \Yii::setAlias($alias, $path);
-
-        $reloadFile = $path . DIRECTORY_SEPARATOR . $class . '.php';
-
-        file_put_contents($reloadFile, $content);
-
-        $config = $this->createConfig($info['namespace'] . '\\' . $class, $info['namespace'], $path);
-
-        \Yii::setAlias($alias, null);
-
-        unlink($reloadFile);
-
-        return $config;
-
-    }
-
-    protected function aliasFromNameSpace($space)
-    {
-        return str_replace('\\', '/', $space);
-    }
-
-
-    /** Инициализурет конфигурацию усиановленного модуля
-     * @param string $file file name of module class
-     * @return null|Config
-     */
-    private function initConfig($file)
-    {
-
-        if (!file_exists($file)) {
-            return null;
-        }
-
-        ReflectionHelper::initClassInfo($file, $info);
-
-        $path = dirname($file);
-
-        $alias = $this->aliasFromNameSpace($info['namespace']);
-        \Yii::setAlias($alias, $path);
-
-        $config = $this->createConfig($info['class'], $info['namespace'], $path);
-
-        return $config;
-    }
+    private $_list;
 
     /** Массив конфигураций модулей
-     * поиск по директориям $this->places если нет в кеше
-     * @return Config[]
+     * @return ConfigInterface[]
      */
     public function getModulesClassesList()
     {
-        return $this->getCache()->getOrSet($this->getCacheKey(), function () {
-            $r = [];
-            foreach ($this->places as $place => $alias) {
-                $r = array_merge($r, $this->findModulesConfig(Yii::getAlias($alias)));
-            }
-            return $r;
-        }, null, $this->getCacheDependency());
+        if (empty($this->_list)) {
+            return $this->_list = $this->getCache()->getOrSet($this->getCacheKey(), function () {
+                $resolver = $this->configResolver;
+                if (!$resolver instanceof ManagerConfigResolver) {
+                    $resolver = Yii::createObject($this->configResolver, [$this]);
+                }
+                return $resolver->resolve();
+            }, null, $this->getCacheDependency());
+        }
+        return $this->_list;
     }
 
     /**
-     * Поиск модулей в каталоге
-     * @param string $path
-     * @return Config[]
+     * @return $this
      */
-    protected function findModulesConfig($path)
+    public function clearCache()
     {
-        $r = [];
-        if (empty($path)) {
-            return $r;
+        $this->_list = null;
+        if (empty($this->cacheVariations)) {
+            $this->getCache()->offsetUnset($this->getCacheKey());;
+            return $this;
         }
-        $dirs = FileHelper::findDirectories($path, ['recursive' => false]);
-        foreach ($dirs as $dir) {
-            if ($config = $this->initConfig($dir . DIRECTORY_SEPARATOR . 'Module.php')) {
-                $r[$config->id] = $config;
-                $path = $config->path . DIRECTORY_SEPARATOR . 'modules';
-                if (file_exists($path)) {
-                    $config->addModules($this->findModulesConfig($path));
-                }
-            }
+        foreach ($this->cacheVariations as $variation) {
+            $this->getCache()->offsetUnset($this->getCacheKey($variation));
         }
-        return $r;
+        return $this;
     }
+
 
     /**
      * @param array $filter
-     * @param Config[] $modules
-     * @return Config[]
+     * @param ConfigInterface[] $modules
+     * @return ConfigInterface[]
      */
     public function getFilteredClassesList($filter = ['enabled' => true], $modules = null)
     {
@@ -350,12 +373,13 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @return mixed|null|Config
+     * @return ConfigInterface
      */
     public function getModuleConfigById($id)
     {
         $list = null;
         $config = null;
+
         foreach (explode('/', $id) as $part) {
             if ($config = $this->getFilteredClassesList(['id' => $part], $list)) {
                 $config = reset($config);
@@ -366,221 +390,237 @@ class Manager extends Component implements BootstrapInterface
     }
 
 
-    /**Параметры конфигурации приложения
-     * @param Config $config
+    /**
+     * Convert ConfigInterface object to Yii2 module settings
+     * @param ConfigInterface $config
      * @return array
      * @recursive
      */
-    protected function getArrayApplicationParams(Config $config)
+    protected function getArrayApplicationParams(ConfigInterface $config)
     {
         return [
-            'class' => $config->getClass(),
-            'version' => $config->getVersion(),
-            'modules' => array_map([$this, 'getArrayApplicationParams'], $config->getModules()),
+            'class' => $config->class,
+            'version' => $config->version,
+            'modules' => array_map([$this, 'getArrayApplicationParams'], $config->modules),
         ];
     }
 
     /**
-     * @param Config $config
+     * @param ConfigInterface $config
      * @param bool $bootstrap
+     * @param DelayedInitiator $collectorDelayedItems
+     * @throws InvalidConfigException
+     * @throws ModuleNotFoundException
      */
-    protected function addModule(Config $config, $bootstrap = true)
+    protected function addModule(ConfigInterface $config, $bootstrap = true, $collectorDelayedItems = null)
     {
+        $app = $this->application;
+        $params = $this->getArrayApplicationParams($config);
 
-        \Yii::$app->setModule($config->id, $this->getArrayApplicationParams($config));
-
-        foreach ([$config] + $config->getModules() as $config) {
-
-            $this->setModuleAlias($config);
-
-            if ($config->enabled) {
-                if (!empty($config->urlRules)) {
-                    \Yii::$app->urlManager->addRules($config->urlRules, $config->appendRoutes);
-                }
-
-                if ($bootstrap && $config->bootstrap) {
-                    $module = $this->loadModule(null, $config);
-                    if ($module instanceof BootstrapInterface) {
-                        $module->bootstrap(\Yii::$app);
-                    }
+        if ($config->parentModule) {
+            if (!$module = ArrayHelper::getValue($app->modules, [$config->parentModule, 'modules', $config->id])) {
+                $module = (isset($app->modules[$config->parentModule])) ?
+                    $app->modules[$config->parentModule] : null;
+                if ($module instanceof Module) {
+                    $module->setModule($config->id, $params);
+                } elseif (is_array($module)) {
+                    $parent = $this->getModuleConfigById($config->parentModule);
+                    $parent->modules[$config->id] = $params;
+                    $app->setModules([
+                        $parent->id  => $this->getArrayApplicationParams($parent)
+                    ]);
                 }
             }
+        } else {
+            $app->setModule($config->id, $params);
         }
+
+        if ($config->isEnabled()) {
+            $this->addEventsToApp($config, $collectorDelayedItems);
+            if (!empty($config->urlRules)) {
+                $app->urlManager->addRules($config->urlRules, $config->appendRoutes);
+            }
+            if ($bootstrap && $config->bootstrap) {
+                $module = $this->loadModule(null, $config);
+                if ($module instanceof BootstrapInterface) {
+                    $module->bootstrap($app);
+                }
+            }
+            if ($modules = $config->modules) {
+                $this->addModulesToApp($modules, $collectorDelayedItems);
+            }
+        }
+
     }
 
 
-    /** Добавляет альяс класса модуля к загрузчику
-     * @param Config $config
+    /**
+     * @param ConfigInterface $config
      */
-    protected function setModuleAlias(Config $config)
+    protected function setModuleAlias(ConfigInterface $config)
     {
         if ($config->nameSpace !== ($this->baseNameSpace . '\\' . $config->id)) {
             \Yii::setAlias(str_replace('\\', '/', $config->nameSpace), $config->path);
         }
     }
 
-    /** Добавляет классы активных модулей в конфигурацию приложения
-     *  выключенным модулям прописываем псевдонимы каталогов загрузчика
-     */
-    private function addAppModulesToApplication()
-    {
-        foreach ($this->getModulesClassesList() as $config) {
-
-            //игнорирование модулей которые не работают при xhr
-            if (Yii::$app instanceof Application && Yii::$app->request->isAjax && !$config->xhrActive) {
-                continue;
-            }
-
-            if (Yii::$app instanceof \yii\console\Application && !$config->enabledOnConsole) {
-                continue;
-            }
-
-            /**@var  Config $config */
-            if ($config->isEnabled()) {
-                $this->addModule($config);
-            } else {
-                $this->setModuleAlias($config);
-            }
-        }
-    }
-
     /**
-     * @param Config $config
+     * @param ConfigInterface $config
+     * @param DelayedInitiator $collectorDelayedItems
+     * @param AppModuleEventHandler[] $handlers
+     * @throws InvalidConfigException
      */
-    private function addConfigEvents($config)
+    private function addEventsToApp($config, $collectorDelayedItems = null, $handlers = null)
     {
-        foreach ($config->events as $class => $classEvents) {
-            foreach ($classEvents as $classEvent) {
-                $append = true;
-                $method = null;
-                if (is_array($classEvent)) {
-                    if (empty($classEvent['name'])) {
-                        throw  new InvalidConfigException('Attribute name required for class event ' . $class . ' options. Module ' . $config->id);
-                    }
-                    $name = $classEvent['name'];
-                    $method = ArrayHelper::getValue($classEvent, 'method');
-                    $append = ArrayHelper::getValue($classEvent, 'append', true);
-                } else {
-                    $name = $classEvent;
-                }
-                Event::on($class, $name, [$this, '_eventByMethod'], [
-                    'moduleConfig' => $config,
-                    'method' => $method
-                ], $append);
-            }
+        $handlers = isset($handlers) ? $handlers : (array)$config->handler;
+
+        $debug = $this->hasEventHandlers(self::EVENT_HANDLERS_DEBUG);
+
+        if (is_subclass_of($config->class, AppModuleEventHandler::class)) {
+            $handlers[] = $config->class;
         }
-    }
 
-    /** Регистрация событий*/
-    private function registerEvents()
-    {
-        foreach ($this->getFilteredClassesList() as $config) {
+        foreach ($handlers as $handler) {
 
-            $this->addConfigEvents($config);
+            if (!is_subclass_of($handler, AppModuleEventHandler::class)) {
 
-            foreach ($config->modules as $subModule) {
-                if ($subModule->isEnabled()) {
-                    $this->addConfigEvents($subModule);
+                $module = $this->load($config->class);
+
+                if ($config->class === $handler) {
+                    $handler = $module;
+                } elseif ($module->has($handler)) {
+                    $handler = $module->get($handler);
+                } elseif ($module->hasProperty($handler) && $module->canGetProperty($handler)) {
+                    $handler = $module->{$handler};
+                }
+
+                if (!($handler instanceof AppModuleEventHandler)) {
+                    Yii::warning('Unknown handler type .
+                    ' . (is_object($handler) ? get_class($handler) : $handler), static::class);
+                    continue;
                 }
             }
-        }
-    }
 
-    /**
-     * @param Event $event
-     * @return string
-     */
-    public static function generateMethodName($event)
-    {
-        if (isset($event->data['method'])) {
-            return $event->data['method'];
-        }
+            $valid = (method_exists($handler, 'isHandlerValid')) ?
+                $handler::isHandlerValid($this->application, $config) : true;
 
-        $reflector = new \ReflectionClass($event->sender);
-        $name = $reflector->getShortName();
-        return lcfirst($name) . ucfirst($event->name);
-    }
+            if ($valid) {
 
-    /** Передача события объекту обработчику
-     * @param Event $event
-     */
-    public function _eventByMethod($event)
-    {
-        /** @var Config $config */
-        $config = $event->data['moduleConfig'];
-
-        $method = self::generateMethodName($event);
-
-        if ($handlers = $config->getHandler()) {
-            /** @var AppModuleEventHandler $handler */
-            foreach ((array)$handlers as $handler) {
-                if (class_exists($handler)) {
-                    try {
-                        if (is_subclass_of($handler, AppModuleStaticEventHandler::class)) {
-                            /** @var AppModuleStaticEventHandler $handler */
-                            if ($handler::handleStatic($event, $method)) {
-                                return;
+                foreach ($handler::getEvents() as $class => $classEvents) {
+                    foreach ($classEvents as $classEvent) {
+                        $append = true;
+                        $method = null;
+                        if (is_array($classEvent)) {
+                            if (empty($classEvent['name'])) {
+                                throw  new InvalidConfigException('Attribute name required for class event '
+                                    . $class . ' options. Module ' . $config->id);
                             }
+                            $name = $classEvent['name'];
+                            $method = ArrayHelper::getValue($classEvent, 'method');
+                            $append = ArrayHelper::getValue($classEvent, 'append', true);
                         } else {
-
-                            $handler = $config->eventHandlerInstance($handler);
-                            if ($handler->handle($event, $method)) {
-                                return;
-                            }
+                            $name = $classEvent;
+                        }
+                        if ($debug) {
+                            $this->trigger(self::EVENT_HANDLERS_DEBUG, new ModuleHandlerDebugEvent([
+                                'config' => $config,
+                                'handler' => $handler,
+                                'method' => $method,
+                                'eventName' => $name,
+                                'senderClass' => $class,
+                            ]));
                         }
 
-                    } catch (\Exception $exception) {
-                        $this->onEventHandlerException($exception, null, $event);
-                        return;
+                        Event::on($class, $name, [$this, '_eventByMethodHandler'], [
+                            'moduleConfig' => $config,
+                            'h' => $handler,
+                            'm' => $method,
+                        ], $append);
                     }
                 }
-            }
-        }
-
-
-        //old
-
-        try {
-            /** @var Module|AppModuleInterface $module */
-            $module = $this->loadModule(null, $config);
-        } catch (ModuleNotFoundException $exception) {
-            $this->clearCache();
-            return;
-        }
-
-        $handler = null;
-
-        if (method_exists($module, 'getModuleEventHandler')) {
-            if (!$handler = $module->getModuleEventHandler()) {
-                return;
-            }
-        }
-
-        try {
-
-            //app module event handler
-            if ($handler instanceof AppModuleEventHandler) {
-                if ($handler->handle($event, $method)) {
-                    return;
-                }
-            }
-            // backward compatibility
-            $m = (method_exists($handler, $method)) ? $method : 'handleModuleEvent';
-
-            if (!method_exists($handler, $m)) {
-                throw new InvalidModuleConfiguration($this, 'Unknown handler for event ' . $event->name . ' method ' . $method .
-                    ' not found in ' . $config->getUniqueId());
+            } elseif (isset($collectorDelayedItems)) {
+                $collectorDelayedItems->addHandler($config, $handler);
             }
 
-            call_user_func_array([$handler, $m], ['event' => $event]);
-
-        } catch (\Exception $exception) {
-            $this->onEventHandlerException($exception, $module, $event);
         }
     }
 
+
+    /** Modules Event handler
+     * @param Event $event
+     */
+    public function _eventByMethodHandler($event)
+    {
+
+        /** @var ConfigInterface $config */
+        $config = $event->data['moduleConfig'];
+
+        /** @var AppModuleEventHandler|string $handler */
+        $handler = ArrayHelper::remove($event->data, 'h');
+
+        if (!$method = ArrayHelper::remove($event->data, 'm')) {
+            $method = lcfirst(StringHelper::basename(get_class($event->sender)) . ucfirst($event->name));
+        }
+
+        $handlerName = (is_object($handler) ? get_class($handler) : $handler) . '::' . $method;
+
+        Yii::beginProfile('Handle: ' . $handlerName, static::class);
+
+        $hasDebugListeners = $this->hasEventHandlers(self::EVENT_HANDLERS_DEBUG);
+
+        try {
+            $handled = false;
+            if (is_subclass_of($handler, AppModuleEventHandler::class)) {
+
+                if (is_subclass_of($handler, AppModuleStaticEventHandler::class)) {
+                    /** @var AppModuleStaticEventHandler $handler */
+                    $handled = $handler::handleStatic($event, $method);
+                }
+
+                if (!$handled) {
+                    $handler = ($config->class === $handler) ? $this->load($config->class)
+                        : $config->eventHandlerInstance($handler);
+                    if (method_exists($handler, 'handle')) {
+                        $handled = $handler->handle($event, $method);
+                    } elseif (method_exists($handler, $method)) {
+                        $handled = call_user_func([$handler, $method], $event);
+                    }
+                }
+            }
+
+            if ($handled !== false) {
+                if ($hasDebugListeners) {
+                    $this->trigger(self::EVENT_HANDLERS_DEBUG, new ModuleHandlerDebugEvent([
+                        'isHandled' => true,
+                        'config' => $config,
+                        'handler' => $handler,
+                        'method' => $method,
+                        'eventName' => $event->name,
+                        'senderClass' => get_class($event->sender),
+                    ]));
+                }
+                Yii::endProfile('Handle: ' . $handlerName, static::class);
+                return;
+            }
+
+            throw new InvalidModuleConfiguration($this, (is_object($handler) ? get_class($handler) : $handler) .
+                ' Unknown handler method for event ' . $event->name . ' method ' .
+                $method . ' not found in ' . $config->uniqueId);
+
+        } catch (\Exception $exception) {
+            $this->onEventHandlerException($exception, null, $event);
+            Yii::endProfile('Handle: ' . $handlerName, static::class);
+            return;
+        } catch (\Throwable $exception) {
+            $this->onEventHandlerException($exception, null, $event);
+            Yii::endProfile('Handle: ' . $handlerName, static::class);
+            return;
+        }
+    }
+
+
     /**
-     * Обработка исключений вызванных в событии модуля
+     * Events exception handler
      * @param \Exception $exception
      * @param Module $module
      * @param Event $event
@@ -588,8 +628,12 @@ class Manager extends Component implements BootstrapInterface
     private function onEventHandlerException($exception, $module, $event)
     {
 
+        if (YII_ENV_TEST) {
+            throw $exception;
+        }
+
         if (empty($module)) {
-            /** @var Config $config */
+            /** @var ConfigInterface $config */
             if ($config = ArrayHelper::getValue($event, 'data.moduleConfig')) {
                 try {
                     $module = $this->loadModule($config->id, $config, true);
@@ -606,7 +650,7 @@ class Manager extends Component implements BootstrapInterface
             return;
         }
 
-        Yii::error($exception->getMessage(), __CLASS__);
+        Yii::error($exception->getMessage(), static::class);
 
         if (YII_DEBUG) {
             throw  $exception;
@@ -614,7 +658,11 @@ class Manager extends Component implements BootstrapInterface
 
     }
 
-
+    /**
+     * @param null $forFile
+     * @return bool|string
+     * @throws \yii\base\ErrorException
+     */
     private function getTmpPath($forFile = null)
     {
         $path = \Yii::getAlias('@runtime/modules');
@@ -634,6 +682,8 @@ class Manager extends Component implements BootstrapInterface
     }
 
     /**
+     * Load a module by module class
+     *
      * @param AppModuleInterface|string $class
      * @param bool $bootstrap
      * @return AppModuleInterface|Module
@@ -644,10 +694,11 @@ class Manager extends Component implements BootstrapInterface
     }
 
 
-    /** Загружает или находит существующий объект модуля
-     * если модуль не добавлен в приложение добавляет и возвращает его экземпляр
+    /**
+     * Load module by id.
+     * If module configuration not exists in application then will added
      * @param $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @param bool $bootstrap
      * @return AppModuleInterface|Module
      * @throws ModuleNotFoundException
@@ -658,15 +709,18 @@ class Manager extends Component implements BootstrapInterface
             throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
         }
 
-        if (!$module = $config->getModuleInstance()) {
+        Yii::beginProfile('Loading module ' . $config->uniqueId, static::class);
 
-            if ($config->parentModule && empty(Yii::$app->modules[$config->parentModule])) {
+        if (!$module = $this->application->getModule($config->uniqueId, false)) {
+            $this->setModuleAlias($config);
+
+            if ($config->parentModule && empty($this->application->modules[$config->parentModule])) {
                 $this->addModule($this->getModuleConfigById($config->parentModule), $bootstrap);
             }
 
-            if (!$module = \Yii::$app->getModule($config->getUniqueId())) {
+            if (!$module = $this->application->getModule($config->uniqueId)) {
                 $this->addModule($config, $bootstrap);
-                $module = \Yii::$app->getModule($id);
+                $module = $this->application->getModule($config->uniqueId);
             }
         }
 
@@ -675,70 +729,131 @@ class Manager extends Component implements BootstrapInterface
             throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
         }
 
+        $this->trigger(self::EVENT_LOAD, new ModuleEvent([
+                'module' => $module,
+                'config' => $config
+            ]
+        ));
+
+        Yii::endProfile('Loading module ' . $config->uniqueId, static::class);
+
         return $module;
 
     }
 
-    /** Обновление модуля
-     * @param Config $exist
-     * @param Config $new
+    /** Upgrade a module
+     * @param ConfigInterface $exist
+     * @param ConfigInterface|string $new
      * @param string $fileName
      * @return bool
+     * @throws ModuleNotFoundException
      * @throws \yii\base\ErrorException
      */
-    protected function upgrade(Config $exist, Config $new, $fileName)
+    public function upgrade(ConfigInterface $exist, $new, $fileName = null)
     {
-        if (version_compare($exist->version, $new->version, '>=')) {
-            return true;
+        $isUpdateSourceMode = $new instanceof ConfigInterface;
+
+        if ($isUpdateSourceMode) {
+            if (version_compare($exist->version, $new->version, '>=')) {
+                return true;
+            }
+            $alias = dirname(ConfigInitializerLocFile::aliasFromNameSpace($new->class));
+            Yii::setAlias($alias, $new->path);
         }
 
-        $alias = dirname($this->aliasFromNameSpace($new->class));
-
-        Yii::setAlias($alias, $new->path);
         /** @var Module|AppModuleInterface $instance */
-        $instance = $this->loadModule($new->uniqueId);;
-
-
+        $instance = $this->loadModule($isUpdateSourceMode ? $new->uniqueId : $exist->uniqueId);;
         $event = new ModuleEvent(['module' => $instance]);
         $this->trigger(self::EVENT_BEFORE_UPGRADE, $event);
 
-
         if ((!$event->isValid) || ($instance->hasMethod('upgrade') && !$instance->upgrade())) {
-            Yii::setAlias($alias, null);
+            if (isset($alias)) {
+                Yii::setAlias($alias, null);
+            }
             return false;
         }
 
-        Yii::setAlias($alias, null);
-
-        FileHelper::removeDirectory($exist->path);
-        rename($new->path, $exist->path);
-
-        $instance->version = $new->version;
+        if ($isUpdateSourceMode) {
+            if (isset($alias)) {
+                Yii::setAlias($alias, null);
+            }
+            FileHelper::removeDirectory($exist->path);
+            rename($new->path, $exist->path);
+            $instance->version = $new->version;
+        }
 
         $this->clearCache();
 
         $this->trigger(self::EVENT_AFTER_UPGRADE, new ModuleUpgradeEvent([
             'module' => $instance,
-            'newVersion' => $new->version,
+            'newVersion' => $isUpdateSourceMode ? $new->version : $new,
             'oldVersion' => $exist->version,
-            'fileName' => $fileName
+            'fileName' => $fileName,
         ]));
 
+        foreach ($exist->modules as $subConfig) {
+            try {
+                $instance = $this->loadModule($subConfig->uniqueId);
+                $this->executeMethod(self::EVENT_BEFORE_UPGRADE, self::EVENT_AFTER_UPGRADE,
+                    $instance, function () use ($instance) {
+                        if ($instance->hasMethod('upgrade')) {
+                            return $instance->upgrade();
+                        }
+                        return true;
+                    }, ['config' => $subConfig]);
+
+            } catch (ModuleNotFoundException $exception) {
+                Yii::warning($exception->getMessage());
+                continue;
+            }
+        }
 
         return true;
     }
 
-    /** Установка файлов модуля
+    /**
      * @param string $filesPath
-     * @param Config $config
+     * @param ConfigInterface $config
      * @return $this
+     * @throws InstallationDirectoryExistsException
      */
-    protected function installFiles($filesPath, Config $config)
+    protected function installFiles($filesPath, &$config)
     {
         $path = $config->getInstalledPath();
+
+        $this->trigger(self::EVENT_UNZIP, new ModuleEvent(['config' => $config]));
+
+        if (is_dir($path)) {
+            $exception = new InstallationDirectoryExistsException($this,
+                'Cannot install module. Installation directory already exists ' . $path);
+            $exception->path = $path;
+            throw  $exception;
+        }
+
         FileHelper::createDirectory($path);
+
         rename($filesPath, $path);
+
+        $config = $this->getConfigInitializerLocFile()->readConfig($config->getInstalledPath());
+        $this->trigger(self::EVENT_UNZIPPED, new ModuleEvent([
+            'config' => $config
+        ]));
+
         return $this;
+    }
+
+
+    /**
+     * @param \yii\base\Module|AppModuleInterface $module
+     * @param boolean $isReset
+     * @return bool
+     */
+    protected function internalUnInstall($module, $isReset)
+    {
+        return $this->executeMethod(self::EVENT_BEFORE_UNINSTALL,
+            self::EVENT_AFTER_UNINSTALL, $module, function () use ($module, $isReset) {
+                return ($module->hasMethod('uninstall') ? $module->uninstall($isReset) : true);
+            }, ['isReset' => $isReset]);
     }
 
 
@@ -747,12 +862,12 @@ class Manager extends Component implements BootstrapInterface
      * @param string $eventAfter
      * @param Module|AppModuleInterface $module
      * @param \Closure $callback
-     * @param boolean $isReset
+     * @param $eventProperties = [];
      * @return bool
      */
-    private function executeMethod($eventBefore, $eventAfter, $module, \Closure $callback, $isReset = false)
+    private function executeMethod($eventBefore, $eventAfter, $module, \Closure $callback, $eventProperties = [])
     {
-        $event = new ModuleEvent(['module' => $module, 'isReset' => $isReset]);
+        $event = new ModuleEvent(array_merge(['module' => $module], $eventProperties));
 
         if (isset($eventBefore)) {
             $this->trigger($eventBefore, $event);
@@ -760,6 +875,11 @@ class Manager extends Component implements BootstrapInterface
 
         if ($event->isValid) {
             $result = call_user_func($callback);
+
+            if (is_null($result)) {
+                $result = true;
+            }
+
             if ($result) {
                 if (isset($eventAfter)) {
                     $event->handled = false;
@@ -772,33 +892,20 @@ class Manager extends Component implements BootstrapInterface
         return false;
     }
 
-
     /**
-     * @param $module \yii\base\Module|AppModuleInterface
-     * @param boolean $isReset
-     * @return bool
-     */
-    protected function internalUnInstall($module, $isReset)
-    {
-        return $this->executeMethod(self::EVENT_BEFORE_UNINSTALL,
-            self::EVENT_AFTER_UNINSTALL, $module, function () use ($module, $isReset) {
-                return ($module->hasMethod('uninstall') ? $module->uninstall($isReset) : true);
-            }, $isReset);
-    }
-
-    /**
-     * @param $module \yii\base\Module|AppModuleInterface
+     * @param \yii\base\Module|AppModuleInterface $module
+     * @param ConfigInterface $config
      * @param boolean $isReset
      * @param bool $isActivate
      * @return bool
      * @throws ManagerExceptionBase
      */
-    protected function internalInstall($module, $isReset, $isActivate = false)
+    protected function internalInstall($module, ConfigInterface $config, $isReset, $isActivate = false)
     {
         $result = $this->executeMethod(self::EVENT_BEFORE_INSTALL,
             self::EVENT_AFTER_INSTALL, $module, function () use ($module, $isReset) {
                 return ($module->hasMethod('install') ? $module->install($isReset) : true);
-            }, $isReset);
+            }, ['isReset' => $isReset, 'config' => $config]);
 
         if ($result && $isActivate) {
             $this->turnOn($module->uniqueId);
@@ -808,8 +915,8 @@ class Manager extends Component implements BootstrapInterface
     }
 
     /**
-     * @param $module \yii\base\Module|AppModuleInterface
-     * @param Config $config
+     * @param \yii\base\Module|AppModuleInterface $module
+     * @param ConfigInterface $config
      * @param string $state
      * @return bool
      */
@@ -819,62 +926,149 @@ class Manager extends Component implements BootstrapInterface
             self::EVENT_AFTER_CHANGE_STATE,
             $module, function () use ($config, $state, $module) {
 
-                $r = new \ReflectionMethod($config, $state);
-                $r->setAccessible(true);
+                $config->changeState($state);
 
-                $result = $r->invoke($config);
-
-                if ($result && $module->hasMethod('changedState')) {
-                    $result = $module->changedState($config->isEnabled());
+                if ($module->hasMethod('changedState')) {
+                    $module->changedState($config->isEnabled());
                 }
-
-                return $result;
-            });
+                return true;
+            }, ['config' => $config]);
 
     }
 
-
     /**
      * @param $fileName
      * @param string|null $tmpPath
      * @param array|null $moduleClassInfo
-     * @return Config|null
-     * @throws ManagerExceptionBase
-     */
-    /**
-     * @param $fileName
-     * @param string|null $tmpPath
-     * @param array|null $moduleClassInfo
-     * @return Config|null
-     * @throws ManagerExceptionBase
+     * @return ConfigInterface|null
      */
     public function readModuleZip($fileName, &$tmpPath = null, &$moduleClassInfo = null)
     {
+
         try {
             $tmpPath = $this->getTmpPath($fileName);
+
             $zip = new ZipArchive();
             $zip->open($fileName);
             $zip->extractTo($tmpPath);
-            $file = $tmpPath . DIRECTORY_SEPARATOR . 'Module.php';
-            return $this->readConfig($file, $moduleClassInfo);
-
+            return $this->getConfigInitializerLocFile()
+                ->readTemporaryConfig($tmpPath, $moduleClassInfo);
         } catch (\Exception $exception) {
-            throw  new ManagerExceptionBase($this, $exception->getMessage(), $exception);
+            FileHelper::removeDirectory($tmpPath);
+            throw  $exception;
+        } catch (\Throwable $exception) {
+            FileHelper::removeDirectory($tmpPath);
+            throw  $exception;
         } finally {
             if (isset($zip)) {
                 $zip->close();
             }
+
         }
     }
 
 
     /**
+     * @return ConfigInitializerLocFile
+     * @throws InvalidConfigException
+     */
+    public function getConfigInitializerLocFile()
+    {
+        return Yii::createObject(ConfigInitializerLocFile::class, [$this]);
+    }
+
+    /**
      * @param $fileName
-     * @param Config|null $config
+     * @param ConfigInterface $config
+     * @param bool|callable $onExists
+     * @return bool
+     * @throws ManagerExceptionBase
+     * @throws \Throwable
+     */
+    public function unzip($fileName, &$config = null, $onExists = true)
+    {
+        try {
+
+            $config = $this->readModuleZip($fileName, $tmp, $moduleClassInfo);
+
+            if ($existsConfig = $this->getModuleConfigById($config->uniqueId)) {
+                try {
+                    if (is_callable($onExists)) {
+                        $onExists = $onExists($config, $existsConfig);
+                    }
+                    if ($onExists) {
+                        $r = $this->upgrade($existsConfig, $config, $fileName);
+                        $config = $existsConfig;
+                        return $r;
+                    } else {
+                        FileHelper::removeDirectory($existsConfig->path);
+                    }
+                } finally {
+                    if ($onExists) {
+                        FileHelper::removeDirectory($tmp);
+                    }
+                }
+            }
+
+            $this->installFiles($tmp, $config)->clearCache();
+
+        } catch (\Exception $exception) {
+            if (!($exception instanceof ManagerExceptionBase)) {
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
+            } else {
+                throw $exception;
+            }
+        }
+
+        return true;
+
+    }
+
+
+    /**
+     * @param ConfigInterface|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
-    public function install($fileName, &$config = null)
+    public function install($config)
+    {
+        try {
+            $module = $this->loadModule(null, $config);
+            if ($this->internalInstall($module, $config, false)) {
+                /** @var Module $module */
+                foreach ($config->modules as $id => $subModuleConfig) {
+                    try {
+                        $subModule = $this->loadModule(null, $subModuleConfig);
+                        $this->internalInstall($subModule, $subModuleConfig, false);
+                    } catch (\Exception $exception) {
+                        $exception = new SubModuleException($this, 'Error on installation sub module ' . $subModuleConfig->uniqueId
+                            . ' ' . $exception->getMessage(), $exception, $subModuleConfig);
+                        $exception->submoduleConfig = $subModuleConfig;
+                        throw $exception;
+                    }
+                }
+            } else {
+                return false;
+            }
+            $this->clearCache();
+        } catch (\Exception $exception) {
+            if (!($exception instanceof ManagerExceptionBase)) {
+                throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
+            } else {
+                throw $exception;
+            }
+        }
+        return true;
+    }
+
+
+    /**
+     * @param $fileName
+     * @param ConfigInterface|null $config
+     * @return bool
+     * @throws ManagerExceptionBase
+     */
+    public function unzipAndProcess($fileName, &$config = null)
     {
         try {
 
@@ -883,27 +1077,9 @@ class Manager extends Component implements BootstrapInterface
             if ($c = $this->getModuleConfigById($config->uniqueId)) {
                 try {
                     $r = $this->upgrade($c, $config, $fileName);
-
-                    foreach ($c->modules as $subConfig) {
-                        try {
-                            $instance = $this->loadModule($subConfig->uniqueId);
-                            $this->executeMethod(self::EVENT_BEFORE_UPGRADE, self::EVENT_AFTER_UPGRADE,
-                                $instance, function () use ($instance) {
-                                    if ($instance->hasMethod('upgrade')) {
-                                        return $instance->upgrade();
-                                    }
-                                    return true;
-                                });
-
-                        } catch (ModuleNotFoundException $exception) {
-                            Yii::warning($exception->getMessage());
-                            continue;
-                        }
-                    }
                 } finally {
                     FileHelper::removeDirectory($tmp);
                 }
-
                 $config = $c;
                 return $r;
             }
@@ -925,7 +1101,7 @@ class Manager extends Component implements BootstrapInterface
                         $this->getArrayApplicationParams($config), ['class' => $moduleClassInfo['class']])
                 );
             }
-            /** @var Config $dstConfig */
+            /** @var ConfigInterface $dstConfig */
 
             $module =
                 $this->installFiles($tmp, $config)
@@ -940,13 +1116,13 @@ class Manager extends Component implements BootstrapInterface
                 $module->init();
             }
 
-            if ($this->internalInstall($module, false, $this->isAutoActivate)) {
+            if ($this->internalInstall($module, $dstConfig, false, $this->isAutoActivate)) {
 
                 foreach ($dstConfig->modules as $subConfig) {
                     try {
-                        $this->internalInstall($this->loadModule($subConfig->uniqueId), false, true);
+                        $this->internalInstall($this->loadModule($subConfig->uniqueId), $subConfig, false, true);
                     } catch (\Exception $exception) {
-                        $exception = new SubModuleException($this, 'Error installed sub module ' . $subConfig->name
+                        $exception = new SubModuleException($this, 'Error installed sub module ' . $subConfig->uniqueId
                             . ' ' . $exception->getMessage(), $exception, $dstConfig);
                         $exception->submoduleConfig = $subConfig;
                         throw $exception;
@@ -968,7 +1144,7 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
@@ -985,7 +1161,7 @@ class Manager extends Component implements BootstrapInterface
                     }
                 } catch (\Exception $exception) {
                     $config = $this->getModuleConfigById($module->getUniqueId());
-                    $exception = new SubModuleException($this, 'Error Uninstalled sub module ' . $config->name
+                    $exception = new SubModuleException($this, 'Error Uninstalled sub module ' . $config->uniqueId
                         . ' ' . $exception->getMessage(), $exception, $config);
                     $exception->submoduleConfig = $config;
                     throw $exception;
@@ -1011,14 +1187,14 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @throws ManagerExceptionBase
      */
     public function turnOn($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
-            $this->internalChangeState($module, $config, 'turnOn');
+            $this->internalChangeState($module, $config, ConfigInterface::STATE_ON);
             $this->clearCache();
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
@@ -1031,14 +1207,14 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @throws ManagerExceptionBase
      */
     public function turnOff($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
-            $this->internalChangeState($module, $config, 'turnOff');
+            $this->internalChangeState($module, $config, ConfigInterface::STATE_OFF);
             $this->clearCache();
 
         } catch (\Exception $exception) {
@@ -1052,14 +1228,14 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param string $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @throws ManagerExceptionBase
      */
     public function toggle($id, &$config = null)
     {
         try {
             $module = $this->loadModule($id, $config);
-            $this->internalChangeState($module, $config, 'toggle');
+            $this->internalChangeState($module, $config, ConfigInterface::STATE_TOGGLE);
         } catch (\Exception $exception) {
             if (!($exception instanceof ManagerExceptionBase)) {
                 throw new ManagerExceptionBase($this, $exception->getMessage(), $exception, $config);
@@ -1072,18 +1248,22 @@ class Manager extends Component implements BootstrapInterface
 
     /**
      * @param $id
-     * @param Config|null $config
+     * @param ConfigInterface|null $config
      * @return bool
      * @throws ManagerExceptionBase
      */
     public function reset($id, &$config = null)
     {
         try {
-            $module = $this->loadModule($id, $config);
+
+            $this->resetToDefaultResolver();
+            $config = $this->getModuleConfigById($id);
+
+            $module = $this->loadModule($id);
 
             if ($this->internalUnInstall($module, true)) {
-                $this->internalInstall($module, true);
-                $this->internalChangeState($module, $config, ($config->enabled) ? 'turnOn' : 'turnOff');
+                $this->internalInstall($module, $config, true);
+                $this->internalChangeState($module, $config, ($config->isEnabled()) ? ConfigInterface::STATE_ON : ConfigInterface::STATE_OFF);
             }
             if ($this->isAutoActivate) {
                 $this->turnOn($id, $config);
@@ -1096,29 +1276,19 @@ class Manager extends Component implements BootstrapInterface
                 throw $exception;
             }
         }
-        return true;
+            return true;
 
-    }
-
-    /**
-     * @param $destinationPath
-     * @param Config $config
-     * @return string
-     */
-    private function zipFileName($destinationPath, Config $config)
-    {
-        return \Yii::getAlias($destinationPath) . DIRECTORY_SEPARATOR .
-            $config->id . "_" . $config->version . ".zip";
     }
 
     /** Export module ti zip file
      * @param string $id module id
      * @param string $destinationPath destination path
-     * @param Config|null $config
+     * @param boolean $withSubModules
+     * @param ConfigInterface|null $config
      * @return string zip archive file name
      * @throws ManagerExceptionBase
      */
-    public function export($id, $destinationPath, &$config = null)
+    public function export($id, $destinationPath, $withSubModules = true, &$config = null)
     {
         try {
 
@@ -1126,16 +1296,21 @@ class Manager extends Component implements BootstrapInterface
                 throw new ModuleNotFoundException($this, 'Unknown module ' . $id, null);
             }
 
-            $fileName = $this->zipFileName($destinationPath, $config);
+            $fileName = \Yii::getAlias($destinationPath) . DIRECTORY_SEPARATOR .
+                str_replace('/', '-', $config->uniqueId) . "_" . $config->version . ".zip";
 
             $zip = new ZipArchive();
             $zip->open($fileName, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
-            foreach (FileHelper::findFiles($config->path, [
-                'except' => ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep', '/runtime']
-            ]) as $file) {
-                $parts = explode('/' . $config->id . '/', $file);
-                $zip->addFile($file, '/' . $parts[1]);
+            $except = ['*.loc', 'tests*', '*.yml', 'composer.*', '.*', '!.gitkeep', '/runtime'];
+
+            if (!$withSubModules) {
+                $except[] = '/modules';
+            }
+
+            foreach (FileHelper::findFiles($config->path, ['except' => $except]) as $file) {
+                $parts = explode(DIRECTORY_SEPARATOR . $config->id . DIRECTORY_SEPARATOR, $file, 2);
+                $zip->addFile($file, $parts[1]);
             }
             $zip->close();
 

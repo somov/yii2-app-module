@@ -2,8 +2,8 @@
 
 namespace testGroupModuleSubModule;
 
-use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleInterface;
+use somov\appmodule\interfaces\ConfigInterface;
 use yii\base\Event;
 use yii\base\Exception;
 
@@ -27,9 +27,9 @@ class Module extends \yii\base\Module implements AppModuleInterface
     }
 
     /**
-     * @inheritdoc
+     * @param ConfigInterface|\ExtendConfigInterface $config
      */
-    public static function configure(Config $config)
+    public static function configure(ConfigInterface $config)
     {
         $config->name = 'Test';
         $config->description = 'Test';

@@ -6,18 +6,19 @@
  * Time: 22:13
  */
 
-namespace staticHandler;
+namespace objectHandler;
 
 
 use mtest\common\TestComponent;
-use somov\appmodule\components\AppModuleStaticEventHandler;
+use somov\appmodule\interfaces\AppModuleEventHandler;
+use yii\base\BaseObject;
 use yii\base\Event;
 
 /**
  * @method boolean handle (Event $event, string $method)
  * @method boolean isHandlerValid()
  */
-class TestHandler extends AppModuleStaticEventHandler
+class TestHandler extends BaseObject implements AppModuleEventHandler
 {
 
     /**
@@ -38,7 +39,7 @@ class TestHandler extends AppModuleStaticEventHandler
     /**
      * @param $event
      */
-    protected static function test($event)
+    public function test($event)
     {
         $event->sender->testProperty = time();
     }

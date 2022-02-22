@@ -1,6 +1,6 @@
 <?php
 
-namespace staticHandler;
+namespace instanceHandler;
 
 use mtest\common\TestComponent;
 use somov\appmodule\interfaces\AppModuleInterface;
@@ -22,14 +22,13 @@ use somov\appmodule\interfaces\ConfigInterface;
 class Module extends \yii\base\Module implements AppModuleInterface
 {
 
-    const EVENT_INIT = 'init';
 
     /**
      * @return string
      */
     public static function getAppModuleId()
     {
-        return 'static-handler';
+        return 'instance-handler';
     }
 
     /**
@@ -37,18 +36,14 @@ class Module extends \yii\base\Module implements AppModuleInterface
      */
     public static function configure(ConfigInterface $config)
     {
-        $config->name = 'static-handler-test';
-        $config->handler = TestHandler::class;
+        $config->name = 'static-instance-handler-test';
+        $config->handler = TestInstanceHandler::class;
 
     }
 
-    /**
-     * @return TestComponent
-     */
     public function getTestComponent()
     {
         return new TestComponent();
     }
-
 
 }

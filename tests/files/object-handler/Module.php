@@ -1,6 +1,6 @@
 <?php
 
-namespace staticHandler;
+namespace objectHandler;
 
 use mtest\common\TestComponent;
 use somov\appmodule\interfaces\AppModuleInterface;
@@ -18,6 +18,7 @@ use somov\appmodule\interfaces\ConfigInterface;
  * @method bool uninstall(bool $isReset = false)
  * @method bool changedState(bool $isEnabled)
  * @method null getModuleEventHandler()
+ * @property-read TestHandler $customHandler
  */
 class Module extends \yii\base\Module implements AppModuleInterface
 {
@@ -29,7 +30,7 @@ class Module extends \yii\base\Module implements AppModuleInterface
      */
     public static function getAppModuleId()
     {
-        return 'static-handler';
+        return 'object-handler';
     }
 
     /**
@@ -37,8 +38,8 @@ class Module extends \yii\base\Module implements AppModuleInterface
      */
     public static function configure(ConfigInterface $config)
     {
-        $config->name = 'static-handler-test';
-        $config->handler = TestHandler::class;
+        $config->name = 'object-handler-test';
+        $config->handler = 'customHandler';
 
     }
 
@@ -50,5 +51,12 @@ class Module extends \yii\base\Module implements AppModuleInterface
         return new TestComponent();
     }
 
+    /**
+     *
+     */
+    public function getCustomHandler()
+    {
+        return new TestHandler();
+    }
 
 }

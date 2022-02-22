@@ -2,16 +2,19 @@
 
 namespace testGroupModuleSubModule;
 
-use somov\appmodule\Config;
+use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
+use somov\appmodule\interfaces\ConfigInterface;
 use yii\base\Event;
 use yii\base\Exception;
 
 /**
  *  module definition class
  * @method bool changedState(bool $isEnabled)
+ * @method boolean handle (Event $event, string $method)
+ * @method Boolean isHandlerValid()
  */
-class Module extends \yii\base\Module implements AppModuleInterface
+class Module extends \yii\base\Module implements AppModuleInterface, AppModuleEventHandler
 {
 
     public static function getAppModuleId()
@@ -27,14 +30,13 @@ class Module extends \yii\base\Module implements AppModuleInterface
     }
 
     /**
-     * @inheritdoc
+     * @param ConfigInterface|\ExtendConfigInterface $config
      */
-    public static function configure(Config $config)
+    public static function configure(ConfigInterface $config)
     {
         $config->name = 'Test';
         $config->description = 'Test';
         $config->version = '1.0.1';
-        $config->events = self::getEvents();
         $config->category = 'Test';
     }
 
@@ -77,6 +79,7 @@ class Module extends \yii\base\Module implements AppModuleInterface
     {
         throw new Exception('111');
     }
+
 
 
 }

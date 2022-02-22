@@ -11,6 +11,10 @@ namespace somov\appmodule\components;
 
 use yii\helpers\StringHelper;
 
+/**
+ * Class ModuleUpgradeEvent
+ * @package somov\appmodule\components
+ */
 class ModuleUpgradeEvent extends ModuleEvent
 {
     /**

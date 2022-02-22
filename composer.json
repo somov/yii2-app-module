@@ -1,6 +1,6 @@
 {
   "name": "somov/yii2-app-module",
-  "description": "Manage modules Yii2  at run time. Enable, disable, install, uninstall and update. ",
+  "description": "A manage modules Yii2  at run time. Can enable, disable, install, uninstall and update. ",
   "type": "yii2-extension",
   "keywords": [
     "yii2",

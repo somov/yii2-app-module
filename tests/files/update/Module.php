@@ -3,9 +3,9 @@
 namespace testModule;
 
 
-use somov\appmodule\Config;
 use somov\appmodule\interfaces\AppModuleEventHandler;
 use somov\appmodule\interfaces\AppModuleInterface;
+use somov\appmodule\interfaces\ConfigInterface;
 use testModule\components\TestInterface;
 use yii\base\Event;
 use yii\base\Exception;
@@ -29,14 +29,13 @@ class Module extends \yii\base\Module implements AppModuleInterface, TestInterfa
     }
 
     /**
-     * @inheritdoc
+     * @param ConfigInterface|\ExtendConfigInterface $config
      */
-    public static function configure(Config $config)
+    public static function configure(ConfigInterface $config)
     {
         $config->name = 'Test';
         $config->description = 'Test';
         $config->version = '9.9.9';
-        $config->events = self::getEvents();
         $config->category = 'Test';
     }
 

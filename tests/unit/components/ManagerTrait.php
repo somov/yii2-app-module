@@ -9,6 +9,7 @@
 namespace mtest\components;
 
 
+use somov\appmodule\components\ConfigLocFile;
 use somov\appmodule\components\Manager;
 use yii\caching\ExpressionDependency;
 use yii\caching\FileCache;
@@ -23,7 +24,7 @@ trait ManagerTrait
 
     protected function assertConfig($config)
     {
-        foreach (['id', 'path', 'enabled', 'class', 'events', 'enabled'] as $key) {
+        foreach (['id', 'class',  'name_space'] as $key) {
             $this->assertArrayHasKey($key, $config);
         }
     }
@@ -45,7 +46,6 @@ trait ManagerTrait
     }
 
 
-
     protected function setUp()
     {
         $this->manager = \Yii::createObject([
@@ -54,7 +54,14 @@ trait ManagerTrait
                 'cacheConfig' => [
                     'class' => FileCache::class,
                 ],
-
+                'configOptions' => [
+                    'class' => ConfigLocFile::class,
+                    'extendProperties' => [
+                        'name' => null,
+                        'description' => null,
+                        'category' => null,
+                    ]
+                ],
                 'cacheVariations' => [
                     'uk',
                     'en'
@@ -68,21 +75,22 @@ trait ManagerTrait
             ]
         );
 
+        $this->manager->bootstrap(\Yii::$app);
+
         parent::setUp();
     }
 
     /**
      * @param string $id
-     * @param string $id
      * @return string zip file name
      */
     private function createZipTestModule($id)
     {
-        $path =  \Yii::getAlias("@ext/files/$id");
+        $path = \Yii::getAlias("@ext/files/$id");
 
         $zip = new ZipArchive();
 
-        $zip->open( dirname($path) . '/'.  $id.  '.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->open(dirname($path) . '/' . $id . '.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
         foreach (FileHelper::findFiles($path, [
             'only' => ['pattern' => '*.*']
